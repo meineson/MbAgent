@@ -2,6 +2,8 @@ import { execSync } from 'child_process';
 import readline from 'readline';
 
 const MODEL = "minimax/minimax-m2.1"; 
+const BASE_URL = "http://172.21.240.16:8000"
+// const BASE_URL = "https://api.qnaigc.com"
 // const MODEL = 'deepseek/deepseek-v3.2-251201';
 
 const rl = readline.createInterface({
@@ -72,12 +74,12 @@ async function runTool(action, params) {
   }else if (action === "check_camera") {    
     const url = params.url;
     const name = params.name;
-    console.log(`执行命令：ffplay -loglevel debug '${url}'，3秒钟，并检查输出内容判断是否正常。`);
+    console.log(`执行命令：ffplay -loglevel debug '${url}'，60秒钟，并检查输出内容判断是否正常。`);
 
     try {
 
       const output = execSync(
-        `ffplay -t 3 -loglevel debug -i '${url}'`,
+        `ffplay -t 60 -loglevel debug -i '${url}'`,
         {
           stdio: ['ignore', 'pipe', 'pipe'], // 捕获 stdout + stderr
           encoding: 'utf8',
@@ -126,7 +128,7 @@ async function sendMessage() {
 
       let data;
       try {
-        const response = await fetch('https://api.qnaigc.com/v1/chat/completions', {
+        const response = await fetch(`${BASE_URL}/v1/chat/completions`, {
           method: 'POST',
           headers: {
             Authorization: 'Bearer ' + process.env.OPENAI_API_KEY,
