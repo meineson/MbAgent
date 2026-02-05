@@ -119,12 +119,12 @@ async function sendMessage() {
       });    
       console.log("等待响应...\r\n")          
 
-      console.log('开始向 AI 服务发送请求，最长等待 30 秒...');
+      console.log('开始向 AI 服务发送请求，最长等待 60 秒...');
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
-        console.log('请求已超过 30 秒，正在中止本次请求...');
+        console.log('请求已超过 60 秒，正在中止本次请求...');
         controller.abort();
-      }, 30000);
+      }, 60000);
 
       let data;
       try {
