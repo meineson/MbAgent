@@ -3,7 +3,9 @@ import readline from 'readline';
 import OpenAI from 'openai';
 
 const MODEL = "minimax/minimax-m2.1"; 
-const BASE_URL = "http://172.21.240.16:8000/v1";
+// const BASE_URL = "http://172.21.240.16:8000/v1";
+const BASE_URL = "https://api.qnaigc.com/v1"
+// const MODEL = 'deepseek/deepseek-v3.2-251201';
 
 // 初始化 OpenAI 客户端（使用本地 API）
 const client = new OpenAI({
@@ -150,8 +152,17 @@ async function sendMessage() {
 
         // 如果有工具调用
         if (toolCallsBuffer.length > 0) {
-          assistantMessage.tool_calls = toolCallsBuffer;
-          messages.push(assistantMessage);
+          // 按规范：工具调用消息的 content 设为 null
+          messages.push({
+            role: 'assistant',
+            content: null,
+            tool_calls: toolCallsBuffer
+          });
+
+          // 如果流中有 content，作为思考过程单独显示
+          if (assistantMessage.content) {
+            console.log('💭 AI 思考过程:', assistantMessage.content);
+          }
 
           // 执行工具
           for (let i = 0; i < toolCallsBuffer.length; i++) {
