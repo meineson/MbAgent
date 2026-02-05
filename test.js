@@ -78,7 +78,7 @@ async function runTool(action, params) {
 
     try {
       const output = execSync(
-        `ffprobe -v error -show_entries stream=codec_name,codec_type -of default=noprint_wrappers=1 '${url}'`,
+        `ffprobe -timeout 3000000 -v error -show_entries stream=codec_name,codec_type -of default=noprint_wrappers=1 '${url}'`,
         {
           stdio: ['ignore', 'pipe', 'pipe'],
           encoding: 'utf8',
@@ -188,18 +188,18 @@ async function sendMessage() {
     let done = false;
     while (!done) {
       console.log("ai 请求发送中\r\n")          
-      console.log("-----DEBUG------");
-      messages.forEach((item, i) => {
-        console.log(`message ${i}:`, item);
-      });    
+      // console.log("-----DEBUG------");
+      // messages.forEach((item, i) => {
+      //   console.log(`message ${i}:`, item);
+      // });    
       console.log("等待响应...\r\n")          
 
-      console.log('开始向 AI 服务发送请求，最长等待 60 秒...');
+      console.log('开始向 AI 服务发送请求...');
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
-        console.log('请求已超过 60 秒，正在中止本次请求...');
+        console.log('请求已超过 10 秒，正在中止本次请求...');
         controller.abort();
-      }, 60000);
+      }, 10000);
 
       let message;
       try {
