@@ -35,14 +35,14 @@ const tools = [
     "type": "function",
     "function": {
       name: "check_camera",
-      description: "检查摄像头的状态，输出结果是ffplay程序的输出，需要你进一步解析判断是否状态正常。",   
+      description: "使用获取到的获取头的RTSP播放地址来检查摄像头的状态，输出结果是ffplay程序的输出,没有输出表示正常。",   
       parameters: {
         type: "object",
         properties: {
           name: { type: "string", description: "指定摄像头的名称" },
           url: { type: "string", description: "指定摄像头的RTSP地址" }
         },
-        required: ["url"]
+        required: ["url", "name"]
       }   
     }
   }
@@ -74,32 +74,107 @@ async function runTool(action, params) {
   }else if (action === "check_camera") {    
     const url = params.url;
     const name = params.name;
-    console.log(`执行命令：ffplay -loglevel debug '${url}'，60秒钟，并检查输出内容判断是否正常。`);
+    console.log(`执行ffprobe检查RTSP流...`);
 
     try {
-
       const output = execSync(
-        `ffplay -t 60 -loglevel debug -i '${url}'`,
+        `ffprobe -v error -show_entries stream=codec_name,codec_type -of default=noprint_wrappers=1 '${url}'`,
         {
-          stdio: ['ignore', 'pipe', 'pipe'], // 捕获 stdout + stderr
+          stdio: ['ignore', 'pipe', 'pipe'],
           encoding: 'utf8',
-          timeout: 3000, // 3 秒超时
-          maxBuffer: 1024 * 1024 * 10 // 增加缓冲区大小
+          timeout: 10000, // 10秒超时
+          maxBuffer: 1024 * 1024
         }
       );
-      const lines = output.slice(0, 1000);
-      console.log('ffplay exitd');
-      return `检查${name}摄像头状态完成，自动分析下面的ffplay程序输出并给出摄像头状态结果：` + lines;
+      console.log('ffprobe 执行成功');
+      return `检查${name}摄像头状态完成：视频流正常。ffprobe输出：${output.slice(0, 1500)}`;
     } catch (err) {
-      // ffplay 被 Ctrl+C / SIGINT / 超时杀掉时也会走这里
-      console.error('ffplay exited');
-      // console.error('stdout:\n', err.stdout?.toString());
-      // console.error('stderr:\n', err.stderr?.toString());
-      return `检查${name}摄像头状态完成，自动分析下面的ffplay输出并给出摄像头状态结果：` + err.stdout?.toString() + err.stderr?.toString();
-    }
+      console.error('ffprobe 执行失败:', err.stderr?.toString()?.substring(0, 200) || err.message);
+      const errorOutput = err.stderr?.toString() || err.message || '无法连接';
+      return `检查${name}摄像头状态完成：连接失败。错误信息：${errorOutput.slice(0, 1500)}`;
+    }    
     
   }
   return "未知工具";
+}
+
+async function handleStreamResponse(response) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let fullContent = '';
+  let fullToolCalls = {};
+  let currentToolCallIndex = -1;
+  
+  console.log('\n🤖 AI 思考中...');
+  console.log('─'.repeat(50));
+  
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    
+    const chunk = decoder.decode(value);
+    const lines = chunk.split('\n');
+    
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      
+      const data = line.slice(6).trim();
+      if (data === '[DONE]' || !data) continue;
+      
+      try {
+        const json = JSON.parse(data);
+        const delta = json.choices[0]?.delta;
+        
+        if (delta?.content) {
+          // 显示思考内容
+          process.stdout.write(delta.content);
+          fullContent += delta.content;
+        }
+        
+        // 处理工具调用
+        if (delta?.tool_calls) {
+          for (const toolDelta of delta.tool_calls) {
+            const index = toolDelta.index;
+            
+            if (!fullToolCalls[index]) {
+              fullToolCalls[index] = {
+                id: toolDelta.id || '',
+                type: 'function',
+                function: {
+                  name: '',
+                  arguments: ''
+                }
+              };
+            }
+            
+            if (toolDelta.function?.name) {
+              fullToolCalls[index].function.name += toolDelta.function.name;
+            }
+            if (toolDelta.function?.arguments) {
+              fullToolCalls[index].function.arguments += toolDelta.function.arguments;
+            }
+            if (toolDelta.id) {
+              fullToolCalls[index].id = toolDelta.id;
+            }
+          }
+        }
+      } catch (e) {
+        // 忽略解析错误
+      }
+    }
+  }
+  
+  console.log('\n' + '─'.repeat(50));
+  
+  // 构建返回的消息对象
+  const result = {
+    content: fullContent || null,
+    tool_calls: Object.keys(fullToolCalls).length > 0 
+      ? Object.values(fullToolCalls) 
+      : null
+  };
+  
+  return result;
 }
 
 async function sendMessage() {
@@ -126,7 +201,7 @@ async function sendMessage() {
         controller.abort();
       }, 60000);
 
-      let data;
+      let message;
       try {
         const response = await fetch(`${BASE_URL}/v1/chat/completions`, {
           method: 'POST',
@@ -135,7 +210,7 @@ async function sendMessage() {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            stream: false,
+            stream: true,
             model: MODEL,
             messages: messages,
             tools: tools,
@@ -145,53 +220,52 @@ async function sendMessage() {
         });
 
         clearTimeout(timeoutId);
-        console.log('AI 服务响应已返回。');
-        data = await response.json();
+        
+        // 处理流式响应
+        message = await handleStreamResponse(response);
       } catch (error) {
         clearTimeout(timeoutId);
         console.error('请求 AI 服务失败：', error);
-        // throw error;
-        break;
-      }
-      if(data.error){
-        console.error('Error:', data.error);
         break;
       }
 
-      console.log("token usage:%d", data.usage?.total_tokens);
-
-      const message = data.choices[0].message;
       let aiReply;
 
       if (message.tool_calls) {
+        // 先将助手消息（包含工具调用）推送到历史
+        messages.push({
+          role: 'assistant',
+          content: message.content || '',
+          tool_calls: message.tool_calls
+        });
+        
         for (let i = 0; i < message.tool_calls.length; i++) {
           const toolCall = message.tool_calls[i];
 
           const action = toolCall.function.name;
           const params = JSON.parse(toolCall.function.arguments);
 
-          console.log(`[${i}] 工具调用：`, action, params);
+          console.log(`\n🔧 [${i}] 工具调用：`, action, params);
 
-          const toolResult = await runTool(action, params); // ✅ 真正阻塞
-          console.log(`[${i}] 工具返回：`, toolResult);
+          const toolResult = await runTool(action, params);
+          console.log(`✅ [${i}] 工具返回完成`);
 
           messages.push({
             role: "tool",
             tool_call_id: toolCall.id,
             content: toolResult
           });
-          messages.push({role: 'assistant', content: toolResult});
         }
 
-        // 👈 这里一定是在所有 tool 执行完之后
+        console.log('\n🔄 工具执行完成，等待 AI 分析结果...\n');
       }
       else if (message.content) {
-        // 普通文本
+        // 普通文本回复
         aiReply = message.content;
-        console.log('AI助手回复:', aiReply);
+        console.log('\n✨ AI助手回复:', aiReply);
         messages.push({ role: 'assistant', content: aiReply });
 
-        console.log("agent任务结束，等待下一个指令。")
+        console.log("\n✅ agent任务结束，等待下一个指令。\n")
         done = true;
         break;
       }
