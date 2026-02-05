@@ -3,8 +3,8 @@ import readline from 'readline';
 import OpenAI from 'openai';
 
 const MODEL = "minimax/minimax-m2.1"; 
-// const BASE_URL = "http://172.21.240.16:8000/v1";
-const BASE_URL = "https://api.qnaigc.com/v1"
+const BASE_URL = "http://172.21.240.16:8000/v1";
+// const BASE_URL = "https://api.qnaigc.com/v1"
 // const MODEL = 'deepseek/deepseek-v3.2-251201';
 
 // 初始化 OpenAI 客户端（使用本地 API）
@@ -116,10 +116,28 @@ async function sendMessage() {
         for await (const chunk of stream) {
           const delta = chunk.choices[0]?.delta;
 
-          // 处理内容
+          // 处理内容（支持 <think> 标签灰色显示）
           if (delta?.content) {
-            process.stdout.write(delta.content);
-            assistantMessage.content += delta.content;
+            const content = delta.content;
+            // 检测是否包含 <think> 标签
+            if (content.includes('<think>') || content.includes('</think>') || assistantMessage.content.includes('<think>')) {
+              // 在 think 标签内使用灰色
+              const gray = '\x1b[90m';
+              const reset = '\x1b[0m';
+              
+              if (content.includes('<think>')) {
+                process.stdout.write(gray + content.replace('<think>', '[思考] ') + reset);
+              } else if (content.includes('</think>')) {
+                process.stdout.write(gray + content.replace('</think>', '') + reset);
+              } else if (assistantMessage.content.includes('<think>')) {
+                process.stdout.write(gray + content + reset);
+              } else {
+                process.stdout.write(content);
+              }
+            } else {
+              process.stdout.write(content);
+            }
+            assistantMessage.content += content;
           }
 
           // 处理工具调用
@@ -160,9 +178,9 @@ async function sendMessage() {
           });
 
           // 如果流中有 content，作为思考过程单独显示
-          if (assistantMessage.content) {
-            console.log('💭 AI 思考过程:', assistantMessage.content);
-          }
+          // if (assistantMessage.content) {
+          //   console.log('💭 AI 思考过程:', assistantMessage.content);
+          // }
 
           // 执行工具
           for (let i = 0; i < toolCallsBuffer.length; i++) {
