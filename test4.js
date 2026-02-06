@@ -6,19 +6,22 @@ import readline from 'readline';
 import { execSync } from 'child_process';
 import { addMemory, searchMemories } from './memory.js';
 
-const MODEL = 'deepseek/deepseek-v3.2-251201';  //ok
-// const MODEL = "minimax/minimax-m2.1";   //ok
-// const MODEL = "moonshotai/kimi-k2-thinking"; 
+// const MODEL = 'deepseek/deepseek-v3.2-251201';  //ok
+const MODEL = "minimax/minimax-m2.1";   //ok
 // const MODEL = "z-ai/glm-4.7";   //ok
 
-const BASE_URL = "http://172.21.240.16:8000/v1";
-// const BASE_URL = "https://api.qnaigc.com/v1"
+// const BASE_URL = "http://172.21.240.16:8000/v1";
+const BASE_URL = "https://api.qnaigc.com/v1"
 
 
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
 });
+
+// Token统计
+let totalInputTokens = 0;
+let totalOutputTokens = 0;
 
 // 定义工具 - LangChain 1.x 格式
 const getCamerasTool = tool(
@@ -80,13 +83,15 @@ const checkCameraTool = tool(
 
 const tools = [getCamerasTool, checkCameraTool];
 
+const model = new ChatOpenAI({
+  model: MODEL, 
+  apiKey: process.env.OPENAI_API_KEY, 
+  configuration: { baseURL: BASE_URL },
+  temperature: 0,
+});
+
 const agent = createAgent({
-  model: new ChatOpenAI({
-    model: MODEL, 
-    apiKey: process.env.OPENAI_API_KEY, 
-    configuration: { baseURL: BASE_URL },
-    temperature: 0,
-  }),
+  model,
   tools,
   systemPrompt: "你是 AI Agent，必须分析用户意图并调用合适的工具完成任务。",
 });
@@ -114,6 +119,14 @@ async function main() {
 
       const lastMessage = result.messages[result.messages.length - 1];
       console.log('\n✨ AI助手回复:', lastMessage.content);
+
+      if (lastMessage.usage_metadata) {
+        const usage = lastMessage.usage_metadata;
+        console.log(`\n📊 Token消耗 - 输入: ${usage.input_tokens}, 输出: ${usage.output_tokens}, 总计: ${usage.total_tokens}`);
+        totalInputTokens += usage.input_tokens;
+        totalOutputTokens += usage.output_tokens;
+        console.log(`📈 累计消耗 - 输入: ${totalInputTokens}, 输出: ${totalOutputTokens}, 总计: ${totalInputTokens + totalOutputTokens}`);
+      }
 
       await addMemory(`用户: ${userInput}\n助手: ${lastMessage.content}`);
       console.log('\n✅ 任务完成\n');
