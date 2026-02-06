@@ -1,6 +1,21 @@
 {
+  "name": "camera-agent",
+  "version": "1.0.0",
+  "description": "AI Agent for camera monitoring using LangChain",
   "type": "module",
+  "scripts": {
+    "start": "node test3.js",
+    "start:legacy": "node test.js",
+    "start:sdk": "node test2.js"
+  },
   "dependencies": {
-    "openai": "^6.17.0"
+    "@langchain/core": "^0.3.0",
+    "@langchain/openai": "^0.3.0",
+    "langchain": "^0.3.0",
+    "openai": "^6.17.0",
+    "zod": "^3.23.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
