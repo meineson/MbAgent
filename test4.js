@@ -1,4 +1,6 @@
 import { createAgent } from "langchain";
+import { ConversationSummaryMemory } from "langchain/memory";
+
 import { ChatOpenAI } from "@langchain/openai";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
@@ -10,8 +12,8 @@ const MODEL = 'deepseek/deepseek-v3.2-251201';  //ok
 // const MODEL = "moonshotai/kimi-k2-thinking"; 
 // const MODEL = "z-ai/glm-4.7";   //ok
 
-// const BASE_URL = "http://172.21.240.16:8000/v1";
-const BASE_URL = "https://api.qnaigc.com/v1"
+const BASE_URL = "http://172.21.240.16:8000/v1";
+// const BASE_URL = "https://api.qnaigc.com/v1"
 
 
 const rl = readline.createInterface({
@@ -56,15 +58,15 @@ const checkCameraTool = tool(
           stdio: ['ignore', 'pipe', 'pipe'],
           encoding: 'utf8',
           timeout: 10000,
-          maxBuffer: 1024 * 1024,
+          maxBuffer: 1024,
         }
       );
       console.log('✅ ffprobe 执行成功');
-      return `检查${name}摄像头状态完成：视频流正常。ffprobe输出：${output.slice(0, 1500)}`;
+      return `检查${name}摄像头状态完成：视频流正常。ffprobe输出：${output.slice(0, 200)}`;
     } catch (err) {
       console.error('❌ ffprobe 执行失败:', err.stderr?.toString()?.substring(0, 200) || err.message);
       const errorOutput = err.stderr?.toString() || err.message || '无法连接';
-      return `检查${name}摄像头状态完成：连接失败。错误信息：${errorOutput.slice(0, 1500)}`;
+      return `检查${name}摄像头状态完成：连接失败。错误信息：${errorOutput.slice(0, 200)}`;
     }
   },
   {
@@ -79,11 +81,10 @@ const checkCameraTool = tool(
 
 const tools = [getCamerasTool, checkCameraTool];
 
-// LangChain 1.x: 使用 createAgent（替代 createToolCallingAgent）
 const agent = createAgent({
   model: new ChatOpenAI({
-    model: MODEL,  // 1.x 使用 model 而非 modelName
-    apiKey: process.env.OPENAI_API_KEY,  // 1.x 使用 apiKey
+    model: MODEL, 
+    apiKey: process.env.OPENAI_API_KEY, 
     configuration: { baseURL: BASE_URL },
     temperature: 0,
   }),
@@ -92,7 +93,7 @@ const agent = createAgent({
 });
 
 async function main() {
-  console.log('🤖 AI Agent 已启动 (LangChain 1.2.18 版本)');
+  console.log('🤖 AI Agent 已启动');
   console.log('输入 exit 退出\n');
 
   while (true) {
@@ -102,7 +103,6 @@ async function main() {
     console.log('\n🤖 AI 思考中...\n');
 
     try {
-      // 1.x 使用 agent.invoke({ messages: [...] })
       const result = await agent.invoke({
         messages: [{ role: 'user', content: userInput }],
       });
