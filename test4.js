@@ -1,27 +1,23 @@
-import { ChatOpenAI } from '@langchain/openai';
-import { tool } from '@langchain/core/tools';
-import { z } from 'zod';
+import { createAgent } from "langchain";
+import { ChatOpenAI } from "@langchain/openai";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
 import readline from 'readline';
 import { execSync } from 'child_process';
-import { createReactAgent } from '@langchain/langgraph/prebuilt';
 
-const MODEL = 'deepseek/deepseek-v3.2-251201';  //ok
-// const MODEL = "minimax/minimax-m2.1";  //ok
-// const MODEL = "moonshotai/kimi-k2-thinking"; //not work
-// const MODEL = "z-ai/glm-4.7";  //not work
-
-// const BASE_URL = "https://api.qnaigc.com/v1";
-const BASE_URL = "http://172.21.240.16:8000/v1"; //local qwen 7b ok
+const MODEL = 'deepseek/deepseek-v3.2-251201';
+const BASE_URL = "https://api.qnaigc.com/v1";
 
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
 });
 
-// 定义工具 - LangGraph 1.x 格式
+// 定义工具 - LangChain 1.x 格式
 const getCamerasTool = tool(
-  async () => {
+  async ({ range }) => {
     console.log('🔧 [get_cameras] 工具被调用');
+    console.log('参数:', JSON.stringify({ range }));
 
     const cameras = [
       { id: 1, name: '门口', url: 'rtsp://172.21.132.230/url1' },
@@ -36,8 +32,10 @@ const getCamerasTool = tool(
   },
   {
     name: 'get_cameras',
-    description: '获取所有在线的网络摄像头，返回结果包含摄像头的名称、编号和RTSP地址。可以不带参数调用。',
-    schema: z.object({}),
+    description: '获取所有在线的网络摄像头，返回结果包含摄像头的名称、编号和RTSP地址。',
+    schema: z.object({
+      range: z.enum(["all"]).describe("摄像头范围，目前只有所有all。")
+    }),
   }
 );
 
@@ -75,23 +73,20 @@ const checkCameraTool = tool(
 
 const tools = [getCamerasTool, checkCameraTool];
 
-// 初始化模型
-const model = new ChatOpenAI({
-  model: MODEL,
-  apiKey: process.env.OPENAI_API_KEY,
-  configuration: { baseURL: BASE_URL },
-  temperature: 0,
-});
-
-// LangGraph 1.x: 使用 createReactAgent（替代 createToolCallingAgent + AgentExecutor）
-const agent = createReactAgent({
-  llm: model,
+// LangChain 1.x: 使用 createAgent（替代 createToolCallingAgent）
+const agent = createAgent({
+  model: new ChatOpenAI({
+    model: MODEL,  // 1.x 使用 model 而非 modelName
+    apiKey: process.env.OPENAI_API_KEY,  // 1.x 使用 apiKey
+    configuration: { baseURL: BASE_URL },
+    temperature: 0,
+  }),
   tools,
-  messageModifier: '你是 AI Agent，必须分析用户意图并调用合适的工具完成任务。',  // 替代 system prompt
+  systemPrompt: "你是 AI Agent，必须分析用户意图并调用合适的工具完成任务。",
 });
 
 async function main() {
-  console.log('🤖 AI Agent 已启动 (LangChain 1.2.18 + LangGraph 版本)');
+  console.log('🤖 AI Agent 已启动 (LangChain 1.2.18 版本)');
   console.log('输入 exit 退出\n');
 
   while (true) {
@@ -101,12 +96,12 @@ async function main() {
     console.log('\n🤖 AI 思考中...\n');
 
     try {
-      // LangGraph 使用 invoke 直接传入消息数组
+      // 1.x 使用 agent.invoke({ messages: [...] })
       const result = await agent.invoke({
         messages: [{ role: 'user', content: userInput }],
       });
 
-      // 获取最后一条 AI 消息
+      // 获取最后一条消息
       const lastMessage = result.messages[result.messages.length - 1];
       console.log('\n✨ AI助手回复:', lastMessage.content);
       console.log('\n✅ 任务完成\n');
