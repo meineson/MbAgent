@@ -17,23 +17,20 @@
 camera-agent/
 ├── package.json          # 项目依赖和脚本
 ├── README.md            # 本文档
-├──
 ├── test.js              # 原生 fetch 实现（原始版本）
-├── test.js.bak          # test.js 备份
-├──
 ├── test2.js             # OpenAI SDK 实现
-├── test2.js.bak         # test2.js 备份
-└──
-├── test3.js             # LangChain 实现（推荐）
+├── test3.js             # LangChain 流式工作示例
+└── test4.js             # LangChain Agent 实现（生产环境推荐）
 ```
 
-## 三个版本对比
+## 四个版本对比
 
 | 版本 | 技术栈 | 特点 | 推荐场景 |
 |------|--------|------|----------|
 | test.js | 原生 fetch | 无依赖，手动处理 SSE 流 | 学习、调试 |
 | test2.js | OpenAI SDK | 代码简洁，自动处理流式 | 快速开发 |
-| test3.js | LangChain | 工程化最佳实践，工具链完整 | 生产环境 |
+| test3.js | LangChain | LangChain 流式工作示例，完整处理工具调用 | 学习流式 |
+| test4.js | LangChain Agent | 自动完成 memory 和工具调用，工程化最佳实践 | 生产环境 |
 
 ## 快速开始
 
