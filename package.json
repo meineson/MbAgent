@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node test3.js",
     "start:legacy": "node test.js",
-    "start:sdk": "node test2.js"
+    "start:sdk": "node test2.js",
+    "start:agent": "node test4.js"
   },
   "dependencies": {
     "@langchain/core": "^0.3.0",
