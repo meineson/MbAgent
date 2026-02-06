@@ -1,1 +1,4 @@
 node_modules/*
+package-lock.json
+faiss_db/index.faiss
+faiss_db/index.json

@@ -1,11 +1,10 @@
 import { createAgent } from "langchain";
-import { ConversationSummaryMemory } from "langchain/memory";
-
 import { ChatOpenAI } from "@langchain/openai";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import readline from 'readline';
 import { execSync } from 'child_process';
+import { addMemory, searchMemories } from './memory.js';
 
 const MODEL = 'deepseek/deepseek-v3.2-251201';  //ok
 // const MODEL = "minimax/minimax-m2.1";   //ok
@@ -93,7 +92,7 @@ const agent = createAgent({
 });
 
 async function main() {
-  console.log('🤖 AI Agent 已启动');
+  console.log('🤖 AI Agent 已启动 (含长期记忆功能)');
   console.log('输入 exit 退出\n');
 
   while (true) {
@@ -103,13 +102,20 @@ async function main() {
     console.log('\n🤖 AI 思考中...\n');
 
     try {
+      const relevantMemories = await searchMemories(userInput, 3);
+      let context = '';
+      if (relevantMemories.length > 0) {
+        context = '\n[相关历史记录]\n' + relevantMemories.map(m => m.text).join('\n') + '\n';
+      }
+
       const result = await agent.invoke({
-        messages: [{ role: 'user', content: userInput }],
+        messages: [{ role: 'user', content: context + userInput }],
       });
 
-      // 获取最后一条消息
       const lastMessage = result.messages[result.messages.length - 1];
       console.log('\n✨ AI助手回复:', lastMessage.content);
+
+      await addMemory(`用户: ${userInput}\n助手: ${lastMessage.content}`);
       console.log('\n✅ 任务完成\n');
     } catch (error) {
       console.error('❌ 执行出错:', error.message);
