@@ -5,8 +5,14 @@ import { z } from "zod";
 import readline from 'readline';
 import { execSync } from 'child_process';
 
-const MODEL = 'deepseek/deepseek-v3.2-251201';
-const BASE_URL = "https://api.qnaigc.com/v1";
+const MODEL = 'deepseek/deepseek-v3.2-251201';  //ok
+// const MODEL = "minimax/minimax-m2.1";   //ok
+// const MODEL = "moonshotai/kimi-k2-thinking"; 
+// const MODEL = "z-ai/glm-4.7";   //ok
+
+// const BASE_URL = "http://172.21.240.16:8000/v1";
+const BASE_URL = "https://api.qnaigc.com/v1"
+
 
 const rl = readline.createInterface({
   input: process.stdin,
