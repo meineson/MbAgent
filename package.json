@@ -10,9 +10,9 @@
     "start:agent": "node test4.js"
   },
   "dependencies": {
-    "@langchain/core": "^0.3.0",
-    "@langchain/openai": "^0.3.0",
-    "langchain": "^0.3.0",
+    "@langchain/core": "^1.1.19",
+    "@langchain/openai": "^1.2.5",
+    "langchain": "^1.2.18",
     "openai": "^6.17.0",
     "zod": "^3.23.0"
   },
