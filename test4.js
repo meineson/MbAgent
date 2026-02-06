@@ -1,74 +1,27 @@
 import { ChatOpenAI } from '@langchain/openai';
-import { AgentExecutor, createToolCallingAgent } from 'langchain/agents';
-import { ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts';
-import { BufferMemory } from 'langchain/memory';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import readline from 'readline';
 import { execSync } from 'child_process';
+import { createReactAgent } from '@langchain/langgraph/prebuilt';
 
-const debugCallbacks = {
-  handleAgentAction(action) {
-    console.log("🤖 AgentAction:", {
-      tool: action.tool,
-      toolInput: action.toolInput,
-      toolCallId: action.toolCallId,
-      log: action.log,
-    });
-  },
+const MODEL = 'deepseek/deepseek-v3.2-251201';  //ok
+// const MODEL = "minimax/minimax-m2.1";  //ok
+// const MODEL = "moonshotai/kimi-k2-thinking"; //not work
+// const MODEL = "z-ai/glm-4.7";  //not work
 
-  handleToolStart(tool, input) {
-    console.log("🔧 ToolStart:", tool.name, input);
-  },
-
-  handleToolEnd(tool, output) {
-    console.log("✅ ToolEnd:", tool.name, output);
-  },
-
-  handleLLMStart(llm, prompts) {
-    console.log("🧠 LLMStart prompts:", prompts);
-  },
-
-  handleLLMEnd(output) {
-    console.log("🧠 LLMEnd output:", output);
-    console.dir(output.generations[0].message, { depth: 10 });
-  },
-
-  handleLLMError(err) {
-    console.error("❌ LLMError:", err);
-  },
-};
-
-// const MODEL = 'minimax/minimax-m2.1';
-const MODEL = 'deepseek/deepseek-v3.2-251201';
-const MODEL = "z-ai/glm-4.7";
-
-// const BASE_URL = 'http://172.21.240.16:8000';
-const BASE_URL = "https://api.qnaigc.com/v1"
+// const BASE_URL = "https://api.qnaigc.com/v1";
+const BASE_URL = "http://172.21.240.16:8000/v1"; //local qwen 7b ok
 
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
 });
 
-// 定义工具
+// 定义工具 - LangGraph 1.x 格式
 const getCamerasTool = tool(
-  async (args) => {
+  async () => {
     console.log('🔧 [get_cameras] 工具被调用');
-
-    console.log('原始参数:', args);
-    console.log('参数类型:', typeof args);
-    console.log('JSON字符串?', typeof args === 'string');
-    
-    // 用 Zod 验证参数
-    const schema = z.object({
-      range: z.enum(["all"]).describe("摄像头范围，目前只有所有all。")
-    });
-    const result = schema.safeParse(args);
-    console.log('Zod 验证结果:', result.success);
-    if (!result.success) {
-      console.log('Zod 错误:', result.error.errors);
-    }
 
     const cameras = [
       { id: 1, name: '门口', url: 'rtsp://172.21.132.230/url1' },
@@ -79,16 +32,12 @@ const getCamerasTool = tool(
     cameras.forEach((cam) => {
       resp += `摄像头名称: "${cam.name}"\nRTSP地址: "${cam.url}"\n\n`;
     });
-    // resp += '\n重要：现在你必须使用上述真实RTSP地址调用check_camera工具检查每个摄像头，严禁编造任何地址！\n';
-    // resp += '调用示例：check_camera({"name": "门口", "url": "rtsp://172.21.132.230/url1"})';
     return resp;
   },
   {
     name: 'get_cameras',
-    description: '获取所有在线的网络摄像头，返回结果包含摄像头的名称、编号和RTSP地址。',
-    schema: z.object({
-      range: z.enum(["all"]).describe("摄像头范围，目前只有所有all。")
-    })
+    description: '获取所有在线的网络摄像头，返回结果包含摄像头的名称、编号和RTSP地址。可以不带参数调用。',
+    schema: z.object({}),
   }
 );
 
@@ -124,55 +73,25 @@ const checkCameraTool = tool(
   }
 );
 
-// 初始化工具数组
 const tools = [getCamerasTool, checkCameraTool];
 
-// 初始化模型 - 绑定工具
+// 初始化模型
 const model = new ChatOpenAI({
-  modelName: MODEL,
-  openAIApiKey: process.env.OPENAI_API_KEY,
-  configuration: {
-    baseURL: BASE_URL,
-  },
+  model: MODEL,
+  apiKey: process.env.OPENAI_API_KEY,
+  configuration: { baseURL: BASE_URL },
   temperature: 0,
-  streaming: false
-}).bindTools(tools);
+});
 
-// 创建提示模板
-const prompt = ChatPromptTemplate.fromMessages([
-  ['system', `你是 AI Agent，必须分析用户意图并调用合适的工具完成任务。`],
-  new MessagesPlaceholder('chat_history'),
-  ['human', '{input}'],
-  new MessagesPlaceholder('agent_scratchpad'),
-]);
-
-// 创建 Agent
-const agent = await createToolCallingAgent({
+// LangGraph 1.x: 使用 createReactAgent（替代 createToolCallingAgent + AgentExecutor）
+const agent = createReactAgent({
   llm: model,
   tools,
-  prompt,
-});
-
-// 创建记忆
-const memory = new BufferMemory({
-  memoryKey: 'chat_history',
-  returnMessages: true,
-  inputKey: 'input',
-  outputKey: 'output',
-});
-
-// 创建AgentExecutor
-const agentExecutor = new AgentExecutor({
-  agent,
-  tools,
-  memory,
-  verbose: true,
-  callbacks: [debugCallbacks], // 👈 就在这里
-  maxIterations: 15,
+  messageModifier: '你是 AI Agent，必须分析用户意图并调用合适的工具完成任务。',  // 替代 system prompt
 });
 
 async function main() {
-  console.log('🤖 AI Agent 已启动');
+  console.log('🤖 AI Agent 已启动 (LangChain 1.2.18 + LangGraph 版本)');
   console.log('输入 exit 退出\n');
 
   while (true) {
@@ -182,12 +101,15 @@ async function main() {
     console.log('\n🤖 AI 思考中...\n');
 
     try {
-      const result = await agentExecutor.invoke({
-        input: userInput,
+      // LangGraph 使用 invoke 直接传入消息数组
+      const result = await agent.invoke({
+        messages: [{ role: 'user', content: userInput }],
       });
 
-      console.log('\n✨ AI助手回复:', result.output);
-      console.log('\n✅ 任务完成，记忆已自动保存\n');
+      // 获取最后一条 AI 消息
+      const lastMessage = result.messages[result.messages.length - 1];
+      console.log('\n✨ AI助手回复:', lastMessage.content);
+      console.log('\n✅ 任务完成\n');
     } catch (error) {
       console.error('❌ 执行出错:', error.message);
       console.error(error.stack);
