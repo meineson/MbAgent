@@ -6,6 +6,15 @@ import { z } from 'zod';
 
 const MODEL = "minimax/minimax-m2.1"; 
 const BASE_URL = "http://172.21.240.16:8000/v1";
+// const BASE_URL = "https://api.qnaigc.com/v1"
+
+// 调试开关：设为 true 显示详细日志，false 只显示正常输出
+const DEBUG = false;
+
+// 调试日志函数
+const debugLog = (...args) => {
+  if (DEBUG) console.log(...args);
+};
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -30,6 +39,7 @@ const getCamerasTool = tool(
   {
     name: "get_cameras",
     description: "获取所有在线的网络摄像头，返回结果包含摄像头的名称、编号和RTSP地址。",
+    schema: z.object({}), // 显式定义空参数对象
   }
 );
 
@@ -71,16 +81,14 @@ const toolsMap = {
 };
 
 async function main() {
-  // 初始化 LangChain ChatOpenAI
+  // 初始化 LangChain ChatOpenAI，绑定工具
   const model = new ChatOpenAI({
     modelName: MODEL,
     apiKey: process.env.OPENAI_API_KEY || 'dummy-key',
-    configuration: {
-      baseURL: BASE_URL,
-    },
+    configuration: { baseURL: BASE_URL },
     streaming: true,
     temperature: 0,
-  }).bind({ tools });
+  }).bindTools(tools);
 
   let messages = [
     { role: 'system', content: '你是 AI Agent，分析用户意图并决定要调用哪个工具。不要生成代码，不要重复执行。' }
@@ -103,13 +111,26 @@ async function main() {
       let toolCallsBuffer = [];
 
       try {
+        debugLog('[DEBUG] 开始调用 model.stream(), messages 数量:', messages.length);
+        
         // 使用 LangChain 的 stream 方法
         const stream = await model.stream(messages);
+        let chunkCount = 0;
+        
+        // 用于收集工具调用片段
+        const toolCallChunks = {};
 
         for await (const chunk of stream) {
+          chunkCount++;
+          
+          // DEBUG: 打印每个 chunk 的关键信息
+          if (DEBUG && (chunkCount === 1 || chunkCount % 10 === 0)) {
+            debugLog(`[DEBUG] Chunk #${chunkCount}, has content: ${!!chunk.content}, has tool_call_chunks: ${!!chunk.tool_call_chunks}`);
+          }
+          
           // 处理内容
           if (chunk.content) {
-            const content = typeof chunk.content === 'string' ? chunk.content : chunk.content.toString();
+            const content = String(chunk.content);
             
             // 处理 <think> 标签灰色显示
             if (content.includes('<think>') || content.includes('</think>') || fullContent.includes('<think>')) {
@@ -130,55 +151,53 @@ async function main() {
             }
             fullContent += content;
           }
-
-          // 处理工具调用（LangChain 格式）
-          if (chunk.tool_calls) {
-            for (const tc of chunk.tool_calls) {
-              const index = tc.index || 0;
-              if (!toolCallsBuffer[index]) {
-                toolCallsBuffer[index] = {
-                  id: tc.id || '',
-                  type: 'function',
-                  function: { name: tc.name || '', arguments: '' }
+          
+          // 收集工具调用片段（关键！流式中是分散的）
+          if (chunk.tool_call_chunks && chunk.tool_call_chunks.length > 0) {
+            for (const tcChunk of chunk.tool_call_chunks) {
+              const index = tcChunk.index || 0;
+              if (!toolCallChunks[index]) {
+                toolCallChunks[index] = {
+                  id: tcChunk.id || '',
+                  name: '',
+                  args: ''
                 };
               }
-              if (tc.name) toolCallsBuffer[index].function.name = tc.name;
-              if (tc.args) {
-                toolCallsBuffer[index].function.arguments = JSON.stringify(tc.args);
-              }
-            }
-          }
-
-          // 额外处理：如果 chunk 中有 function_call（旧格式）
-          if (chunk.additional_kwargs?.tool_calls) {
-            for (const tc of chunk.additional_kwargs.tool_calls) {
-              const index = tc.index || 0;
-              if (!toolCallsBuffer[index]) {
-                toolCallsBuffer[index] = {
-                  id: tc.id || '',
-                  type: 'function',
-                  function: { name: '', arguments: '' }
-                };
-              }
-              if (tc.function?.name) {
-                toolCallsBuffer[index].function.name += tc.function.name;
-              }
-              if (tc.function?.arguments) {
-                toolCallsBuffer[index].function.arguments += tc.function.arguments;
-              }
-              if (tc.id && !toolCallsBuffer[index].id) {
-                toolCallsBuffer[index].id = tc.id;
+              if (tcChunk.name) toolCallChunks[index].name += tcChunk.name;
+              if (tcChunk.args) toolCallChunks[index].args += tcChunk.args;
+              if (tcChunk.id && !toolCallChunks[index].id) {
+                toolCallChunks[index].id = tcChunk.id;
               }
             }
           }
         }
 
         console.log('\n' + '─'.repeat(50));
+        debugLog('[DEBUG] 流式响应结束，总 chunk 数:', chunkCount);
+        debugLog('[DEBUG] 最终 fullContent 长度:', fullContent.length);
+        debugLog('[DEBUG] 收集到的 toolCallChunks:', Object.keys(toolCallChunks).length);
+        
+        // 组装工具调用
+        if (Object.keys(toolCallChunks).length > 0) {
+          debugLog('[DEBUG] 检测到工具调用片段，组装中...');
+          toolCallsBuffer = Object.values(toolCallChunks).map(tc => ({
+            id: tc.id,
+            type: 'function',
+            function: {
+              name: tc.name,
+              arguments: tc.args || '{}'
+            }
+          }));
+        } else {
+          debugLog('[DEBUG] 未检测到工具调用片段');
+        }
 
         // 检查是否有工具调用
         const validToolCalls = toolCallsBuffer.filter(tc => tc.function.name);
+        debugLog('[DEBUG] 有效工具调用数量:', validToolCalls.length);
 
         if (validToolCalls.length > 0) {
+          debugLog('[DEBUG] 进入工具调用分支');
           // 推送助手消息（工具调用）
           messages.push({
             role: 'assistant',
@@ -198,6 +217,7 @@ async function main() {
             const toolFunc = toolsMap[action];
             let toolResult;
             if (toolFunc) {
+              // LangChain tool 需要使用 invoke 方法
               toolResult = await toolFunc.invoke(params);
             } else {
               toolResult = "未知工具";
@@ -215,9 +235,12 @@ async function main() {
           console.log('\n🔄 工具执行完成，等待 AI 分析结果...\n');
         } else {
           // 普通回复
+          debugLog('[DEBUG] 进入普通回复分支，fullContent:', fullContent ? '有内容' : '无内容');
           if (fullContent) {
             console.log('\n✨ AI助手回复:', fullContent);
             messages.push({ role: 'assistant', content: fullContent });
+          } else {
+            console.log('[WARNING] AI 没有返回任何内容');
           }
           console.log("\n✅ agent任务结束，等待下一个指令。\n");
           done = true;
