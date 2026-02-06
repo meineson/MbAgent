@@ -3,7 +3,9 @@ import readline from 'readline';
 import OpenAI from 'openai';
 
 const MODEL = "minimax/minimax-m2.1"; 
-const BASE_URL = "http://172.21.240.16:8000/v1";
+const BASE_URL = "http://172.21.240.16:8000/v1";  //qwen 7b
+// const BASE_URL = "http://172.21.240.16:8001/v1";  //deepseek 7b
+// const BASE_URL = "http://172.21.240.16:8002/v1";  //qwen vl 2b
 // const BASE_URL = "https://api.qnaigc.com/v1"
 // const MODEL = 'deepseek/deepseek-v3.2-251201';
 
