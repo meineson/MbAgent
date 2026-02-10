@@ -77,20 +77,20 @@ async function getStore() {
   };
 
   await store.load();
-  console.log(`[Memory] 加载了 ${store.memories.length} 条历史记忆`);
+  console.log(`\x1b[35m[Memory] 加载了 ${store.memories.length} 条历史记忆\x1b[0m`);
   return store;
 }
 
 async function addMemory(text, metadata = {}) {
   const s = await getStore();
   await s.add(text, metadata);
-  console.log(`[Memory] 保存记忆: "${text.substring(0, 30)}..."`);
+  console.log(`\x1b[35m[Memory] 保存记忆: "${text.substring(0, 30)}..."\x1b[0m`);
 }
 
 async function searchMemories(query, topK = 3) {
   const s = await getStore();
   const results = await s.search(query, topK);
-  console.log(`[Memory] 检索到 ${results.length} 条相关记忆`);
+  console.log(`\x1b[35m[Memory] 检索到 ${results.length} 条相关记忆\x1b[0m`);
   return results;
 }
 

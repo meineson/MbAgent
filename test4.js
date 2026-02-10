@@ -10,8 +10,8 @@ const MODEL = 'deepseek/deepseek-v3.2-251201';  //ok
 // const MODEL = "minimax/minimax-m2.1";   //ok
 // const MODEL = "z-ai/glm-4.7";   //ok
 
-// const BASE_URL = "http://172.21.240.16:8000/v1";
-const BASE_URL = "https://api.qnaigc.com/v1"
+const BASE_URL = "http://172.21.240.16:8000/v1";
+// const BASE_URL = "https://api.qnaigc.com/v1"
 
 
 const rl = readline.createInterface({
@@ -26,8 +26,8 @@ let totalOutputTokens = 0;
 // 定义工具 - LangChain 1.x 格式
 const getCamerasTool = tool(
   async ({ range }) => {
-    console.log('🔧 [get_cameras] 工具被调用');
-    console.log('参数:', JSON.stringify({ range }));
+    console.log(`\x1b[35m🔧 [get_cameras] 工具被调用\x1b[0m`);
+    console.log(`\x1b[35m参数:\x1b[0m \x1b[35m${JSON.stringify({ range })}\x1b[0m`);
 
     const cameras = [
       { id: 1, name: '门口', url: 'rtsp://172.21.132.230/url1' },
@@ -50,8 +50,8 @@ const getCamerasTool = tool(
 );
 
 const checkCameraTool = tool(
-  async ({ url, name }) => {
-    console.log(`\n🔧 执行ffprobe检查RTSP流: ${name}...`);
+   async ({ url, name }) => {
+      console.log(`\x1b[35m🔧 执行ffprobe检查RTSP流: ${name}...\x1b[0m`);
 
     try {
       const output = execSync(
@@ -63,10 +63,11 @@ const checkCameraTool = tool(
           maxBuffer: 1024,
         }
       );
-      console.log('✅ ffprobe 执行成功');
+      console.log('\x1b[35m✅ ffprobe 执行成功\x1b[0m');
       return `检查${name}摄像头状态完成：视频流正常。ffprobe输出：${output.slice(0, 200)}`;
     } catch (err) {
-      console.error('❌ ffprobe 执行失败:', err.stderr?.toString()?.substring(0, 200) || err.message);
+      const errorMsg = err.stderr?.toString()?.substring(0, 200) || err.message;
+      console.error(`\x1b[35m❌ ffprobe 执行失败:\x1b[0m \x1b[35m${errorMsg}\x1b[0m`);
       const errorOutput = err.stderr?.toString() || err.message || '无法连接';
       return `检查${name}摄像头状态完成：连接失败。错误信息：${errorOutput.slice(0, 200)}`;
     }
@@ -121,65 +122,62 @@ async function main() {
       );
 
       let fullResponse = '';
-      let hasUsage = false;
-      let usage = null;
-
-      let agentStarted = false;
-      let agentEnded = false;
+      let lastResponse = '';
+      let finalUsage = null;
 
       for await (const event of events) {
         switch (event.event) {
-          case "on_chain_start":
-            if (!agentStarted ) {
-              console.log("\n[🤖 Agent 启动]", event.name);
-              agentStarted = true;
-            }
-            break;
-
           case "on_chat_model_stream":
           case "on_llm_stream":
             const content = event.data.chunk?.message?.content || event.data.chunk?.content;
             if (content) {
-              process.stdout.write(content);
+              process.stdout.write('\x1b[2m' + content + '\x1b[0m');
               fullResponse += content;
             }
             break;
 
+          case "on_llm_end":
+            break;
+
           case "on_tool_start":
-            console.log(`\n[🔧 调用工具] ${event.name}`);
+            console.log(`\n\x1b[32m[🔧 调用工具]\x1b[0m \x1b[32m${event.name}\x1b[0m`);
             if (event.data.input) {
-              console.log("输入:", JSON.stringify(event.data.input).slice(0, 200));
+              console.log(`\x1b[32m输入:\x1b[0m \x1b[32m${JSON.stringify(event.data.input).slice(0, 200)}\x1b[0m`);
             }
             break;
 
           case "on_tool_end":
-            console.log(`\n[✅ 工具返回] ${event.name}`);
-            if (typeof event.data.output === 'string') {
-              console.log("输出:", event.data.output.slice(0, 200));
+            console.log(`\x1b[32m[✅ 工具返回]\x1b[0m \x1b[32m${event.name}\x1b[0m`);
+            const toolOutput = event.data.output?.kwargs?.content || event.data.output?.content || event.data.output;
+            if (typeof toolOutput === 'string') {
+              console.log('\x1b[32m' + toolOutput.slice(0, 200) + '\x1b[0m');
             }
             break;
 
           case "on_chain_end":
-            if (!agentEnded) {
-              console.log("\n[🏁 Agent 结束]", event.name);
-              agentEnded = true;
+            if (event.name === "LangGraph") {
+              const messages = event.data?.output?.messages;
+              if (messages && messages.length > 0) {
+                const lastMsg = messages[messages.length - 1];
+                lastResponse = lastMsg.kwargs?.content || lastMsg.content;
+                finalUsage = lastMsg.kwargs?.usage_metadata || lastMsg.usage_metadata;
+              }
             }
             break;
         }
       }
-      console.log();
 
-      const messages = agent.memory?.chatHistory?.messages || [];
-      const lastMsg = messages[messages.length - 1];
-      if (lastMsg?.usage_metadata) {
-        usage = lastMsg.usage_metadata;
-        console.log(`\n📊 Token消耗 - 输入: ${usage.input_tokens}, 输出: ${usage.output_tokens}, 总计: ${usage.total_tokens}`);
-        totalInputTokens += usage.input_tokens;
-        totalOutputTokens += usage.output_tokens;
-        console.log(`📈 累计消耗 - 输入: ${totalInputTokens}, 输出: ${totalOutputTokens}, 总计: ${totalInputTokens + totalOutputTokens}`);
+      console.log('\r\n\x1b[1m✨ 最终回复:\x1b[0m\r\n\x1b[1m' + lastResponse + '\x1b[0m');
+
+      if (finalUsage) {
+        console.log(`\x1b[2m📊 Token消耗 - 输入: ${finalUsage.input_tokens}, 输出: ${finalUsage.output_tokens}, 总计: ${finalUsage.total_tokens}\x1b[0m`);
+        totalInputTokens += finalUsage.input_tokens;
+        totalOutputTokens += finalUsage.output_tokens;
+        console.log(`\x1b[2m📈 累计消耗 - 输入: ${totalInputTokens}, 输出: ${totalOutputTokens}, 总计: ${totalInputTokens + totalOutputTokens}\x1b[0m`);
       }
 
       await addMemory(`用户: ${userInput}\n助手: ${fullResponse}`);
+      process.stdout.write('\x1b[?25h'); // 显示光标
       console.log('\n✅ 任务完成\n');
     } catch (error) {
       console.error('❌ 执行出错:', error.message);
