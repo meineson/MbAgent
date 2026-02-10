@@ -17,9 +17,9 @@ const MODEL = 'stepfun/step-3.5-flash:free';  //openrouter ok
 // const MODEL = 'z-ai/glm-4.5-air:free';  //openrouter free，ok
 // const MODEL = 'anthropic/claude-3-5-sonnet';  //支持 tool call
 
-// const BASE_URL = "http://172.21.240.16:8000/v1";
+const BASE_URL = "http://172.21.240.16:8000/v1";
 // const BASE_URL = "https://api.qnaigc.com/v1"
-const BASE_URL = "https://openrouter.ai/api/v1"
+// const BASE_URL = "https://openrouter.ai/api/v1"
 
 // API Key
 // const API_KEY = process.env.OPENAI_API_KEY;
@@ -93,7 +93,39 @@ const checkCameraTool = tool(
   }
 );
 
-const tools = [getCamerasTool, checkCameraTool];
+// 报告生成工具
+const generateReportTool = tool(
+  async ({ checkResults }) => {
+    const successCount = checkResults.filter(r => r.status === 'success').length;
+    const errorCount = checkResults.filter(r => r.status === 'error').length;
+
+    let report = `# 摄像头状态报告\n\n`;
+    report += `## 总结\n`;
+    report += `- 总数: ${checkResults.length}\n`;
+    report += `- 正常: ${successCount}\n`;
+    report += `- 异常: ${errorCount}\n\n`;
+    report += `## 详细信息\n\n`;
+    for (const r of checkResults) {
+      report += `### ${r.name}\n`;
+      report += `- 状态: ${r.status === 'success' ? '✅ 正常' : '❌ 异常'}\n`;
+      report += `- 结果: ${r.result.slice(0, 100)}\n\n`;
+    }
+    return report;
+  },
+  {
+    name: 'generate_report',
+    description: '根据摄像头检查结果生成状态报告',
+    schema: z.object({
+      checkResults: z.array(z.object({
+        name: z.string(),
+        status: z.string(),
+        result: z.string(),
+      })),
+    }),
+  }
+);
+
+const tools = [getCamerasTool, checkCameraTool, generateReportTool];
 
 // 创建LLM
 const llm = new ChatOpenAI({
@@ -121,6 +153,7 @@ const StateSchema = z.object({
     status: z.string(),
     result: z.string(),
   })).default([]),
+  isValidFlow: z.boolean().default(false),  // 标记是否是有效流程
 });
 
 // router: 解析用户意图，决定下一步
@@ -140,12 +173,23 @@ async function routerNode(state) {
     nextState = "getlist";
   } else if (hasCheckCamera) {
     nextState = "check";
+  } else {
+    // 用户输入与工具无关，只提醒可用工具
+    const toolList = `无效输入请重试，可用功能：\r\n查询摄像头状态：试试问我门口摄像头在线吗？\r\n`;
+
+    return {
+      messages: [new HumanMessage(toolList)],
+      currentState: END,
+      retryCount: 0,
+      isValidFlow: false,
+    };
   }
 
   return {
     messages: [response],
     currentState: nextState,
     retryCount: 0,
+    isValidFlow: true,
   };
 }
 
@@ -180,6 +224,7 @@ async function getlistNode(state) {
     cameras,
     currentState: "check",
     retryCount: 0,
+    isValidFlow: true,
   };
 }
 
@@ -197,6 +242,7 @@ async function checkNode(state) {
       checkResults: [],
       currentState: "getlist",
       retryCount: 0,
+      isValidFlow: true,
     };
   }
 
@@ -219,6 +265,7 @@ async function checkNode(state) {
     checkResults,
     currentState: "report",
     retryCount: 0,
+    isValidFlow: true,
   };
 }
 
@@ -227,26 +274,24 @@ async function reportNode(state) {
   console.log(`${GREEN}[📊 report] 生成报告...${RESET}`);
 
   const checkResults = state.checkResults;
-  const successCount = checkResults.filter(r => r.status === 'success').length;
-  const errorCount = checkResults.filter(r => r.status === 'error').length;
+  const messages = state.messages;
 
-  let report = `# 摄像头状态报告\n\n`;
-  report += `## 总结\n`;
-  report += `- 总数: ${checkResults.length}\n`;
-  report += `- 正常: ${successCount}\n`;
-  report += `- 异常: ${errorCount}\n\n`;
-  report += `## 详细信息\n\n`;
-  for (const r of checkResults) {
-    report += `### ${r.name}\n`;
-    report += `- 状态: ${r.status === 'success' ? '✅ 正常' : '❌ 异常'}\n`;
-    report += `- 结果: ${r.result.slice(0, 100)}\n\n`;
-  }
+  // 让LLM根据检查结果生成报告
+  const prompt = `根据以下摄像头检查结果生成状态报告：
+
+检查结果：
+${checkResults.map(r => `- ${r.name}: ${r.status} - ${r.result}`).join('\n')}
+
+请生成一份简洁的中文状态报告，用表格输出，只要结果。`;
+
+  const response = await llm.invoke([new HumanMessage(prompt)]);
 
   return {
-    messages: [new HumanMessage(report)],
+    messages: [response],
     currentState: END,
     cameras: [],
     checkResults: [],
+    isValidFlow: true,
   };
 }
 
@@ -260,6 +305,7 @@ async function errorNode(state) {
       messages: [new HumanMessage("多次尝试后失败，请重新输入请求。")],
       currentState: END,
       retryCount: 0,
+      isValidFlow: false,
     };
   }
 
@@ -267,6 +313,7 @@ async function errorNode(state) {
     messages: [new HumanMessage("请重试您的请求。")],
     currentState: "router",
     retryCount: state.retryCount + 1,
+    isValidFlow: false,
   };
 }
 
@@ -347,7 +394,10 @@ async function main() {
         console.log(`${DIM}📈 累计 - 输入: ${totalInputTokens}, 输出: ${totalOutputTokens}, 总计: ${totalInputTokens + totalOutputTokens}${RESET}`);
       }
 
-      await addMemory(`用户: ${userInput}\n助手: ${lastMsg?.content || ''}`);
+      // 根据流程状态决定是否保存到memory
+      if (result.isValidFlow && lastMsg?.content) {
+        await addMemory(`用户: ${userInput}\n助手: ${lastMsg.content}`);
+      }
       console.log('\n✅ 任务完成\n');
     } catch (error) {
       console.error('❌ 执行出错:', error.message);
