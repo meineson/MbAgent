@@ -2,9 +2,10 @@ import { StateGraph, END, START } from "@langchain/langgraph";
 import { ChatOpenAI } from "@langchain/openai";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { HumanMessage, ToolMessage, AIMessageChunk } from "@langchain/core/messages";
+import { HumanMessage, ToolMessage, AIMessageChunk, SystemMessage } from "@langchain/core/messages";
 import readline from 'readline';
 import { execSync } from 'child_process';
+import { addMemory, searchMemories } from './memory.js';
 
 //qn
 // const MODEL = 'deepseek/deepseek-v3.2-251201';  //ok
@@ -100,7 +101,7 @@ const llm = new ChatOpenAI({
   apiKey: API_KEY,
   configuration: { baseURL: BASE_URL },
   temperature: 0,
-  streaming: false,
+  streaming: false  
 });
 
 // 绑定工具
@@ -229,55 +230,35 @@ async function checkNode(state) {
 
   const messages = state.messages;
   const lastMsg = messages[messages.length - 1];
+  const cameras = state.cameras || [];
 
   // 从tool_call中获取check_camera调用
   const toolCalls = lastMsg.tool_calls?.filter(t => t.name === 'check_camera') || [];
 
-  if (toolCalls.length === 0) {
-    // 没有明确指定摄像头，检查所有摄像头
-    console.log(`${GREEN}[🔍 check] 未指定摄像头，检查所有${RESET}`);
-    const cameras = state.cameras || [];
-
-    if (cameras.length === 0) {
-      return {
-        messages: [new ToolMessage({ content: "[]", name: 'check_results' })],
-        checkResults: [],
-        currentState: "getlist",
-        retryCount: state.retryCount || 0,
-        isValidFlow: true,
-        userInput: state.userInput,
-      };
-    }
-
-    const checkResults = [];
-    for (const camera of cameras) {
-      try {
-        console.log(`${GREEN}[🔧 检查] ${camera.name}${RESET}`);
-        const result = await checkCameraTool.invoke({ url: camera.url, name: camera.name });
-        checkResults.push({ name: camera.name, status: 'success', result });
-      } catch (e) {
-        checkResults.push({ name: camera.name, status: 'error', result: e.message });
-      }
-    }
-
-    console.log(`${GREEN}[✅ check] 完成，共${checkResults.length}个${RESET}`);
-
-    return {
-      messages: [new ToolMessage({ content: JSON.stringify(checkResults), name: 'check_results' })],
-      checkResults,
-      currentState: "report",
-      retryCount: 0,
-      isValidFlow: true,
-      userInput: state.userInput,
-    };
-  }
+  console.log(`${GREEN}[🔍 check] cameras: ${cameras.length}, toolCalls: ${toolCalls.length}${RESET}`);
 
   const checkResults = [];
 
-  // 执行所有检查任务
   for (const toolCall of toolCalls) {
-    const { url, name } = toolCall.args || {};
-    if (!url || !name) continue;
+    let { url, name } = toolCall.args || {};
+
+    // 如果缺少参数，从cameras中匹配补充
+    if ((!url || !name) && cameras.length > 0) {
+      // 根据已有的参数匹配摄像头
+      const matchedCam = cameras.find(c =>
+        (url && c.url === url) || (name && c.name === name)
+      );
+      if (matchedCam) {
+        url = url || matchedCam.url;
+        name = name || matchedCam.name;
+      }
+    }
+
+    // 如果还是没有完整信息，跳过
+    if (!url || !name) {
+      console.log(`${RED}[⚠️ check] 缺少摄像头信息，跳过${RESET}`);
+      continue;
+    }
 
     try {
       console.log(`${GREEN}[🔧 检查] ${name}${RESET}`);
@@ -319,19 +300,26 @@ ${toolResult}
 
 请根据用户请求和工具结果，决定：
 1. 如果用户需求已满足，直接生成简洁的中文回复
-2. 如果需要调用工具才能完成需求，请调用合适的工具`;
+2. 如果需要调用工具才能完成需求，请调用合适的工具
+
+注意：如果用户请求检查所有摄像头状态，请为每个摄像头都创建一个check_camera调用。`;
 
   const response = await llmWithTools.invoke([new HumanMessage(prompt)]);
+
+  // console.log("prompt：%s,llm:%s", prompt, JSON.stringify(response.tool_calls));
 
   // 检查是否需要继续调用工具
   const hasGetCameras = response.tool_calls?.some(t => t.name === 'get_cameras');
   const hasCheckCamera = response.tool_calls?.some(t => t.name === 'check_camera');
 
   if (hasGetCameras || hasCheckCamera) {
-    console.log(`${GREEN}[📊 report] -> 继续调用工具${RESET}`);
+    console.log(`${GREEN}[📊 report] -> 继续调用工具: ${response.tool_calls.map(t => t.name).join(', ')}${RESET}`);
+
+    const firstTool = response.tool_calls[0];
+    const nextState = firstTool.name === 'get_cameras' ? "getlist" : "check";
     return {
-      messages: [response],
-      currentState: response.tool_calls[0].name === 'get_cameras' ? "getlist" : "check",
+      messages: [...messages, response],
+      currentState: nextState,
       retryCount: 0,
       isValidFlow: true,
       userInput: state.userInput,
@@ -416,27 +404,41 @@ const workflow = new StateGraph(StateSchema)
 const graph = workflow.compile();
 
 async function main() {
-  console.log('🤖 LangGraph Agent 已启动 (状态机版)');
+  console.log('🤖 LangGraph Agent 已启动 (含长期记忆功能)');
   console.log('状态: router -> getlist -> check -> report');
   console.log('输入 exit 退出\n');
 
+  // System prompt
+  const SYSTEM_PROMPT = `你是 AI Agent，必须分析用户意图并调用合适的工具完成任务，只给出简洁的结果。",
+`;
+
   while (true) {
-    const userInput = await new Promise((resolve) => rl.question('用户输入: ', resolve));
-    if (userInput.toLowerCase() === 'exit') {
-      rl.close();
-      break;
-    }
+    const rawUserInput = await new Promise((resolve) => rl.question('用户输入: ', resolve));
+    if (rawUserInput.toLowerCase() === 'exit') break;
 
     console.log('\n' + BOLD + '🤖 处理中...' + RESET + '\n');
 
     try {
+      // 检索相关记忆
+      const relevantMemories = await searchMemories(rawUserInput, 3);
+      let context = '';
+      if (relevantMemories.length > 0) {
+        context = '\n[相关历史记录]\n' + relevantMemories.map(m => m.text).join('\n') + '\n';
+      }
+
+      // 构建用户输入（附加记忆）
+      const fullUserInput = context + rawUserInput;
+
       const initialState = {
-        messages: [new HumanMessage(userInput)],
+        messages: [
+          new SystemMessage(SYSTEM_PROMPT),
+          new HumanMessage(fullUserInput),
+        ],
         currentState: "router",
         retryCount: 0,
         cameras: [],
         checkResults: [],
-        userInput,
+        userInput: rawUserInput,
       };
 
       const result = await graph.invoke(initialState);
@@ -457,10 +459,10 @@ async function main() {
         console.log(`${DIM}📈 累计 - 输入: ${totalInputTokens}, 输出: ${totalOutputTokens}, 总计: ${totalInputTokens + totalOutputTokens}${RESET}`);
       }
 
-      // 根据流程状态决定是否保存到memory
-      // if (result.isValidFlow && lastMsg?.content) {
-      //   await addMemory(`用户: ${userInput}\n助手: ${lastMsg.content}`);
-      // }
+      // 保存到记忆
+      if (result.isValidFlow && lastMsg?.content) {
+        await addMemory(`用户: ${rawUserInput}\n助手: ${lastMsg.content}`);
+      }
       console.log('\n✅ 任务完成\n');
     } catch (error) {
       console.error('❌ 执行出错:', error.message);

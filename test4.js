@@ -22,9 +22,9 @@ const MODEL = 'stepfun/step-3.5-flash:free';  //openrouter ok
 //qwen/qwen3-coder:free
 // const MODEL = 'qwen/qwen3-max-thinking';  //openrouter qwen3
 
-// const BASE_URL = "http://172.21.240.16:8000/v1";
+const BASE_URL = "http://172.21.240.16:8000/v1";
 // const BASE_URL = "https://api.qnaigc.com/v1"
-const BASE_URL = "https://openrouter.ai/api/v1"
+// const BASE_URL = "https://openrouter.ai/api/v1"
 
 // API Key
 // const API_KEY = process.env.OPENAI_API_KEY;
