@@ -13,6 +13,13 @@ const MODEL = 'deepseek/deepseek-v3.2-251201';  //ok
 const BASE_URL = "http://172.21.240.16:8000/v1";
 // const BASE_URL = "https://api.qnaigc.com/v1"
 
+// 颜色常量
+const RESET = '\x1b[0m';
+const DIM = '\x1b[2m';
+const BOLD = '\x1b[1m';
+const GREEN = '\x1b[32m';
+const MAGENTA = '\x1b[35m';
+
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -26,8 +33,8 @@ let totalOutputTokens = 0;
 // 定义工具 - LangChain 1.x 格式
 const getCamerasTool = tool(
   async ({ range }) => {
-    console.log(`\x1b[35m🔧 [get_cameras] 工具被调用\x1b[0m`);
-    console.log(`\x1b[35m参数:\x1b[0m \x1b[35m${JSON.stringify({ range })}\x1b[0m`);
+    console.log(`${MAGENTA}🔧 [get_cameras] 工具被调用${RESET}`);
+    console.log(`${MAGENTA}参数:${RESET} ${MAGENTA}${JSON.stringify({ range })}${RESET}`);
 
     const cameras = [
       { id: 1, name: '门口', url: 'rtsp://172.21.132.230/url1' },
@@ -51,7 +58,7 @@ const getCamerasTool = tool(
 
 const checkCameraTool = tool(
    async ({ url, name }) => {
-      console.log(`\x1b[35m🔧 执行ffprobe检查RTSP流: ${name}...\x1b[0m`);
+      console.log(`${MAGENTA}🔧 执行ffprobe检查RTSP流: ${name}...${RESET}`);
 
     try {
       const output = execSync(
@@ -63,11 +70,11 @@ const checkCameraTool = tool(
           maxBuffer: 1024,
         }
       );
-      console.log('\x1b[35m✅ ffprobe 执行成功\x1b[0m');
+      console.log(`${MAGENTA}✅ ffprobe 执行成功${RESET}`);
       return `检查${name}摄像头状态完成：视频流正常。ffprobe输出：${output.slice(0, 200)}`;
     } catch (err) {
       const errorMsg = err.stderr?.toString()?.substring(0, 200) || err.message;
-      console.error(`\x1b[35m❌ ffprobe 执行失败:\x1b[0m \x1b[35m${errorMsg}\x1b[0m`);
+      console.error(`${MAGENTA}❌ ffprobe 执行失败:${RESET} ${MAGENTA}${errorMsg}${RESET}`);
       const errorOutput = err.stderr?.toString() || err.message || '无法连接';
       return `检查${name}摄像头状态完成：连接失败。错误信息：${errorOutput.slice(0, 200)}`;
     }
@@ -96,7 +103,7 @@ const model = new ChatOpenAI({
 const agent = createAgent({
   model,
   tools,
-  systemPrompt: "你是 AI Agent，必须分析用户意图并调用合适的工具完成任务。",
+  systemPrompt: "你是 AI Agent，必须分析用户意图并调用合适的工具完成任务，只给出简洁的结果。",
 });
 
 async function main() {
@@ -131,7 +138,7 @@ async function main() {
           case "on_llm_stream":
             const content = event.data.chunk?.message?.content || event.data.chunk?.content;
             if (content) {
-              process.stdout.write('\x1b[2m' + content + '\x1b[0m');
+              process.stdout.write(DIM + content + RESET);
               fullResponse += content;
             }
             break;
@@ -140,17 +147,17 @@ async function main() {
             break;
 
           case "on_tool_start":
-            console.log(`\n\x1b[32m[🔧 调用工具]\x1b[0m \x1b[32m${event.name}\x1b[0m`);
+            console.log(`\n${GREEN}[🔧 调用工具]${RESET} ${GREEN}${event.name}${RESET}`);
             if (event.data.input) {
-              console.log(`\x1b[32m输入:\x1b[0m \x1b[32m${JSON.stringify(event.data.input).slice(0, 200)}\x1b[0m`);
+              console.log(`${GREEN}输入:${RESET} ${GREEN}${JSON.stringify(event.data.input).slice(0, 200)}${RESET}`);
             }
             break;
 
           case "on_tool_end":
-            console.log(`\x1b[32m[✅ 工具返回]\x1b[0m \x1b[32m${event.name}\x1b[0m`);
+            console.log(`${GREEN}[✅ 工具返回]${RESET} ${GREEN}${event.name}${RESET}`);
             const toolOutput = event.data.output?.kwargs?.content || event.data.output?.content || event.data.output;
             if (typeof toolOutput === 'string') {
-              console.log('\x1b[32m' + toolOutput.slice(0, 200) + '\x1b[0m');
+              console.log(GREEN + toolOutput.slice(0, 200) + RESET);
             }
             break;
 
@@ -167,17 +174,16 @@ async function main() {
         }
       }
 
-      console.log('\r\n\x1b[1m✨ 最终回复:\x1b[0m\r\n\x1b[1m' + lastResponse + '\x1b[0m');
+      console.log('\r\n' + BOLD + '✨ 最终回复:' + RESET + '\r\n' + BOLD + lastResponse + RESET);
 
       if (finalUsage) {
-        console.log(`\x1b[2m📊 Token消耗 - 输入: ${finalUsage.input_tokens}, 输出: ${finalUsage.output_tokens}, 总计: ${finalUsage.total_tokens}\x1b[0m`);
+        console.log(`${DIM}📊 Token消耗 - 输入: ${finalUsage.input_tokens}, 输出: ${finalUsage.output_tokens}, 总计: ${finalUsage.total_tokens}${RESET}`);
         totalInputTokens += finalUsage.input_tokens;
         totalOutputTokens += finalUsage.output_tokens;
-        console.log(`\x1b[2m📈 累计消耗 - 输入: ${totalInputTokens}, 输出: ${totalOutputTokens}, 总计: ${totalInputTokens + totalOutputTokens}\x1b[0m`);
+        console.log(`${DIM}📈 累计消耗 - 输入: ${totalInputTokens}, 输出: ${totalOutputTokens}, 总计: ${totalInputTokens + totalOutputTokens}${RESET}`);
       }
 
       await addMemory(`用户: ${userInput}\n助手: ${fullResponse}`);
-      process.stdout.write('\x1b[?25h'); // 显示光标
       console.log('\n✅ 任务完成\n');
     } catch (error) {
       console.error('❌ 执行出错:', error.message);
