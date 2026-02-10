@@ -6,8 +6,8 @@ import readline from 'readline';
 import { execSync } from 'child_process';
 import { addMemory, searchMemories } from './memory.js';
 
-// const MODEL = 'deepseek/deepseek-v3.2-251201';  //ok
-const MODEL = "minimax/minimax-m2.1";   //ok
+const MODEL = 'deepseek/deepseek-v3.2-251201';  //ok
+// const MODEL = "minimax/minimax-m2.1";   //ok
 // const MODEL = "z-ai/glm-4.7";   //ok
 
 // const BASE_URL = "http://172.21.240.16:8000/v1";
@@ -84,10 +84,12 @@ const checkCameraTool = tool(
 const tools = [getCamerasTool, checkCameraTool];
 
 const model = new ChatOpenAI({
-  model: MODEL, 
-  apiKey: process.env.OPENAI_API_KEY, 
+  model: MODEL,
+  apiKey: process.env.OPENAI_API_KEY,
   configuration: { baseURL: BASE_URL },
   temperature: 0,
+  streaming: true,
+  skipTokenCounting: true,
 });
 
 const agent = createAgent({
@@ -113,22 +115,71 @@ async function main() {
         context = '\n[相关历史记录]\n' + relevantMemories.map(m => m.text).join('\n') + '\n';
       }
 
-      const result = await agent.invoke({
-        messages: [{ role: 'user', content: context + userInput }],
-      });
+      const events = await agent.streamEvents(
+        { messages: [{ role: 'user', content: context + userInput }] },
+        { version: "v1", configurable: { thread_id: "1" } }
+      );
 
-      const lastMessage = result.messages[result.messages.length - 1];
-      console.log('\n✨ AI助手回复:', lastMessage.content);
+      let fullResponse = '';
+      let hasUsage = false;
+      let usage = null;
 
-      if (lastMessage.usage_metadata) {
-        const usage = lastMessage.usage_metadata;
+      let agentStarted = false;
+      let agentEnded = false;
+
+      for await (const event of events) {
+        switch (event.event) {
+          case "on_chain_start":
+            if (!agentStarted ) {
+              console.log("\n[🤖 Agent 启动]", event.name);
+              agentStarted = true;
+            }
+            break;
+
+          case "on_chat_model_stream":
+          case "on_llm_stream":
+            const content = event.data.chunk?.message?.content || event.data.chunk?.content;
+            if (content) {
+              process.stdout.write(content);
+              fullResponse += content;
+            }
+            break;
+
+          case "on_tool_start":
+            console.log(`\n[🔧 调用工具] ${event.name}`);
+            if (event.data.input) {
+              console.log("输入:", JSON.stringify(event.data.input).slice(0, 200));
+            }
+            break;
+
+          case "on_tool_end":
+            console.log(`\n[✅ 工具返回] ${event.name}`);
+            if (typeof event.data.output === 'string') {
+              console.log("输出:", event.data.output.slice(0, 200));
+            }
+            break;
+
+          case "on_chain_end":
+            if (!agentEnded) {
+              console.log("\n[🏁 Agent 结束]", event.name);
+              agentEnded = true;
+            }
+            break;
+        }
+      }
+      console.log();
+
+      const messages = agent.memory?.chatHistory?.messages || [];
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg?.usage_metadata) {
+        usage = lastMsg.usage_metadata;
         console.log(`\n📊 Token消耗 - 输入: ${usage.input_tokens}, 输出: ${usage.output_tokens}, 总计: ${usage.total_tokens}`);
         totalInputTokens += usage.input_tokens;
         totalOutputTokens += usage.output_tokens;
         console.log(`📈 累计消耗 - 输入: ${totalInputTokens}, 输出: ${totalOutputTokens}, 总计: ${totalInputTokens + totalOutputTokens}`);
       }
 
-      await addMemory(`用户: ${userInput}\n助手: ${lastMessage.content}`);
+      await addMemory(`用户: ${userInput}\n助手: ${fullResponse}`);
       console.log('\n✅ 任务完成\n');
     } catch (error) {
       console.error('❌ 执行出错:', error.message);
