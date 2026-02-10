@@ -6,12 +6,29 @@ import readline from 'readline';
 import { execSync } from 'child_process';
 import { addMemory, searchMemories } from './memory.js';
 
-const MODEL = 'deepseek/deepseek-v3.2-251201';  //ok
+//qn
+// const MODEL = 'deepseek/deepseek-v3.2-251201';  //ok
 // const MODEL = "minimax/minimax-m2.1";   //ok
 // const MODEL = "z-ai/glm-4.7";   //ok
 
-const BASE_URL = "http://172.21.240.16:8000/v1";
+//openrouter
+const MODEL = 'stepfun/step-3.5-flash:free';  //openrouter ok
+// const MODEL = 'z-ai/glm-4.5-air:free';  //openrouter free，ok
+//google/gemma-3-27b-it:free  qwen/qwen3-4b:free 
+//qwen/qwen3-next-80b-a3b-instruct:free
+//openai/gpt-oss-20b:free
+//stepfun/step-3.5-flash:free
+//meta-llama/llama-3.3-70b-instruct:free
+//qwen/qwen3-coder:free
+// const MODEL = 'qwen/qwen3-max-thinking';  //openrouter qwen3
+
+// const BASE_URL = "http://172.21.240.16:8000/v1";
 // const BASE_URL = "https://api.qnaigc.com/v1"
+const BASE_URL = "https://openrouter.ai/api/v1"
+
+// API Key
+// const API_KEY = process.env.OPENAI_API_KEY;
+const API_KEY = process.env.OPENROUTER_API_KEY;
 
 // 颜色常量
 const RESET = '\x1b[0m';
@@ -19,7 +36,6 @@ const DIM = '\x1b[2m';
 const BOLD = '\x1b[1m';
 const GREEN = '\x1b[32m';
 const MAGENTA = '\x1b[35m';
-
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -93,7 +109,7 @@ const tools = [getCamerasTool, checkCameraTool];
 
 const model = new ChatOpenAI({
   model: MODEL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: API_KEY,
   configuration: { baseURL: BASE_URL },
   temperature: 0,
   streaming: true,
@@ -109,6 +125,22 @@ const agent = createAgent({
 async function main() {
   console.log('🤖 AI Agent 已启动 (含长期记忆功能)');
   console.log('输入 exit 退出\n');
+
+  // 获取并打印可用模型
+  try {
+    if (API_KEY && BASE_URL) {
+      const res = await fetch(`${BASE_URL}/models`, {
+        headers: { Authorization: `Bearer ${API_KEY}` }
+      });
+      const data = await res.json();
+      if (data.data) {
+        const models = data.data.slice(0, 20).map(m => m.id);
+        console.log(MAGENTA + '可用模型:' + RESET, models.join(', '), '\n');
+      }
+    }
+  } catch (e) {
+    console.log('获取模型列表失败:', e.message, '\n');
+  }
 
   while (true) {
     const userInput = await new Promise((resolve) => rl.question('用户输入: ', resolve));
