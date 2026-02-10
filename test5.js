@@ -1,9 +1,9 @@
-import { StateGraph, END, START, Annotation } from "@langchain/langgraph";
+import { StateGraph, END, START } from "@langchain/langgraph";
 import { ChatOpenAI } from "@langchain/openai";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { HumanMessage, ToolMessage } from "@langchain/core/messages";
-import { addMemory, searchMemories } from './memory.js';
+import { addMemory } from './memory.js';
 import readline from 'readline';
 import { execSync } from 'child_process';
 
@@ -107,28 +107,20 @@ const llm = new ChatOpenAI({
 // 绑定工具
 const llmWithTools = llm.bindTools(tools);
 
-// 状态定义
-const StateAnnotation = Annotation.Root({
-  messages: Annotation({
-    value: (x, y) => x.concat(y),
-    default: () => [],
-  }),
-  currentState: Annotation({
-    value: (x, y) => y ?? x,
-    default: () => "start",
-  }),
-  retryCount: Annotation({
-    value: (x, y) => y ?? x,
-    default: () => 0,
-  }),
-  cameras: Annotation({
-    value: (x, y) => y ?? x,
-    default: () => [],
-  }),
-  checkResults: Annotation({
-    value: (x, y) => y ?? x,
-    default: () => [],
-  }),
+// Zod状态定义
+const StateSchema = z.object({
+  messages: z.array(z.any()),
+  currentState: z.enum(["router", "getlist", "check", "report", "error"]).optional(),
+  retryCount: z.number().default(0),
+  cameras: z.array(z.object({
+    name: z.string(),
+    url: z.string(),
+  })).default([]),
+  checkResults: z.array(z.object({
+    name: z.string(),
+    status: z.string(),
+    result: z.string(),
+  })).default([]),
 });
 
 // router: 解析用户意图，决定下一步
@@ -170,7 +162,6 @@ async function getlistNode(state) {
       const result = await getCamerasTool.invoke(toolCall.args);
       console.log(`${GREEN}[✅ getlist] 获取成功${RESET}`);
 
-      // 解析摄像头列表
       const cameraRegex = /摄像头名称: "([^"]+)"\s+RTSP地址: "([^"]+)"/g;
       let match;
       while ((match = cameraRegex.exec(result)) !== null) {
@@ -198,14 +189,10 @@ async function checkNode(state) {
 
   let cameras = state.cameras;
 
-  // 如果没有摄像头，先获取列表
   if (!cameras || cameras.length === 0) {
-    console.log(`${GREEN}[🔍 check] 没有摄像头信息，转到getlist获取${RESET}`);
+    console.log(`${GREEN}[🔍 check] 没有摄像头，转到getlist${RESET}`);
     return {
-      messages: [new ToolMessage({
-        content: "[]",
-        name: 'check_camera',
-      })],
+      messages: [new ToolMessage({ content: "[]", name: 'check_camera' })],
       cameras: [],
       checkResults: [],
       currentState: "getlist",
@@ -217,7 +204,7 @@ async function checkNode(state) {
 
   for (const camera of cameras) {
     try {
-      console.log(`${GREEN}[🔧 检查摄像头] ${camera.name}${RESET}`);
+      console.log(`${GREEN}[🔧 检查] ${camera.name}${RESET}`);
       const result = await checkCameraTool.invoke({ url: camera.url, name: camera.name });
       checkResults.push({ name: camera.name, status: 'success', result });
     } catch (e) {
@@ -225,13 +212,10 @@ async function checkNode(state) {
     }
   }
 
-  console.log(`${GREEN}[✅ check] 检查完成，共${checkResults.length}个摄像头${RESET}`);
+  console.log(`${GREEN}[✅ check] 完成，共${checkResults.length}个${RESET}`);
 
   return {
-    messages: [new ToolMessage({
-      content: JSON.stringify(checkResults),
-      name: 'check_results',
-    })],
+    messages: [new ToolMessage({ content: JSON.stringify(checkResults), name: 'check_results' })],
     checkResults,
     currentState: "report",
     retryCount: 0,
@@ -243,7 +227,6 @@ async function reportNode(state) {
   console.log(`${GREEN}[📊 report] 生成报告...${RESET}`);
 
   const checkResults = state.checkResults;
-
   const successCount = checkResults.filter(r => r.status === 'success').length;
   const errorCount = checkResults.filter(r => r.status === 'error').length;
 
@@ -269,10 +252,10 @@ async function reportNode(state) {
 
 // error: 错误处理
 async function errorNode(state) {
-  console.log(`${RED}[⚠️ error] 错误处理，重试次数: ${state.retryCount}${RESET}`);
+  console.log(`${RED}[⚠️ error] 重试次数: ${state.retryCount}${RESET}`);
 
   if (state.retryCount >= 3) {
-    console.log(`${RED}[❌ error] 重试次数已达上限${RESET}`);
+    console.log(`${RED}[❌ error] 重试达上限${RESET}`);
     return {
       messages: [new HumanMessage("多次尝试后失败，请重新输入请求。")],
       currentState: END,
@@ -282,18 +265,13 @@ async function errorNode(state) {
 
   return {
     messages: [new HumanMessage("请重试您的请求。")],
-    currentState: "start",
+    currentState: "router",
     retryCount: state.retryCount + 1,
   };
 }
 
-// 判断下一步状态
-function decideNext(state) {
-  return state.currentState || "start";
-}
-
 // 创建状态机图
-const workflow = new StateGraph(StateAnnotation)
+const workflow = new StateGraph(StateSchema)
   .addNode("router", routerNode)
   .addNode("getlist", getlistNode)
   .addNode("check", checkNode)
@@ -301,9 +279,27 @@ const workflow = new StateGraph(StateAnnotation)
   .addNode("error", errorNode)
 
   .addEdge(START, "router")
-  .addConditionalEdges("router", decideNext)
-  .addEdge("getlist", "check")
-  .addConditionalEdges("check", decideNext)
+
+  .addConditionalEdges("router", (state) => state.currentState || END, {
+    getlist: "getlist",
+    check: "check",
+    error: "error",
+    [END]: END,
+  })
+
+  .addConditionalEdges("getlist", (state) => state.currentState || "check", {
+    check: "check",
+    error: "error",
+    [END]: "check",
+  })
+
+  .addConditionalEdges("check", (state) => state.currentState || "report", {
+    getlist: "getlist",
+    report: "report",
+    error: "error",
+    [END]: "report",
+  })
+
   .addEdge("report", END)
   .addEdge("error", END);
 
@@ -312,9 +308,8 @@ const graph = workflow.compile();
 
 async function main() {
   console.log('🤖 LangGraph Agent 已启动 (状态机版)');
-  console.log('状态流程: router -> getlist/check -> check -> report (单次执行)');
-  console.log('router会根据意图路由到对应节点或直接结束');
-  console.log('输入 exit 退出\n');  
+  console.log('状态: router -> getlist -> check -> report');
+  console.log('输入 exit 退出\n');
 
   while (true) {
     const userInput = await new Promise((resolve) => rl.question('用户输入: ', resolve));
@@ -326,26 +321,22 @@ async function main() {
     console.log('\n' + BOLD + '🤖 处理中...' + RESET + '\n');
 
     try {
-      // 初始状态
       const initialState = {
         messages: [new HumanMessage(userInput)],
-        currentState: "start",
+        currentState: "router",
         retryCount: 0,
         cameras: [],
         checkResults: [],
       };
 
-      // 运行状态机
       const result = await graph.invoke(initialState);
 
-      // 输出最终回复
       const messages = result.messages || [];
       const lastMsg = messages[messages.length - 1];
       if (lastMsg?.content) {
         console.log('\r\n' + BOLD + '✨ 最终回复:' + RESET + '\r\n' + lastMsg.content);
       }
 
-      // Token统计
       if (lastMsg?.usage_metadata) {
         const usage = lastMsg.usage_metadata;
         const inputTokens = usage.input_tokens || usage.prompt_tokens || 0;
@@ -353,7 +344,7 @@ async function main() {
         console.log(`${DIM}📊 Token消耗 - 输入: ${inputTokens}, 输出: ${outputTokens}, 总计: ${inputTokens + outputTokens}${RESET}`);
         totalInputTokens += inputTokens;
         totalOutputTokens += outputTokens;
-        console.log(`${DIM}📈 累计消耗 - 输入: ${totalInputTokens}, 输出: ${totalOutputTokens}, 总计: ${totalInputTokens + totalOutputTokens}${RESET}`);
+        console.log(`${DIM}📈 累计 - 输入: ${totalInputTokens}, 输出: ${totalOutputTokens}, 总计: ${totalInputTokens + totalOutputTokens}${RESET}`);
       }
 
       await addMemory(`用户: ${userInput}\n助手: ${lastMsg?.content || ''}`);
