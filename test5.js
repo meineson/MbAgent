@@ -2,8 +2,7 @@ import { StateGraph, END, START } from "@langchain/langgraph";
 import { ChatOpenAI } from "@langchain/openai";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { HumanMessage, ToolMessage } from "@langchain/core/messages";
-import { addMemory } from './memory.js';
+import { HumanMessage, ToolMessage, AIMessageChunk } from "@langchain/core/messages";
 import readline from 'readline';
 import { execSync } from 'child_process';
 
@@ -17,9 +16,9 @@ const MODEL = 'stepfun/step-3.5-flash:free';  //openrouter ok
 // const MODEL = 'z-ai/glm-4.5-air:free';  //openrouter free，ok
 // const MODEL = 'anthropic/claude-3-5-sonnet';  //支持 tool call
 
-const BASE_URL = "http://172.21.240.16:8000/v1";
+// const BASE_URL = "http://172.21.240.16:8000/v1";
 // const BASE_URL = "https://api.qnaigc.com/v1"
-// const BASE_URL = "https://openrouter.ai/api/v1"
+const BASE_URL = "https://openrouter.ai/api/v1"
 
 // API Key
 // const API_KEY = process.env.OPENAI_API_KEY;
@@ -93,39 +92,7 @@ const checkCameraTool = tool(
   }
 );
 
-// 报告生成工具
-const generateReportTool = tool(
-  async ({ checkResults }) => {
-    const successCount = checkResults.filter(r => r.status === 'success').length;
-    const errorCount = checkResults.filter(r => r.status === 'error').length;
-
-    let report = `# 摄像头状态报告\n\n`;
-    report += `## 总结\n`;
-    report += `- 总数: ${checkResults.length}\n`;
-    report += `- 正常: ${successCount}\n`;
-    report += `- 异常: ${errorCount}\n\n`;
-    report += `## 详细信息\n\n`;
-    for (const r of checkResults) {
-      report += `### ${r.name}\n`;
-      report += `- 状态: ${r.status === 'success' ? '✅ 正常' : '❌ 异常'}\n`;
-      report += `- 结果: ${r.result.slice(0, 100)}\n\n`;
-    }
-    return report;
-  },
-  {
-    name: 'generate_report',
-    description: '根据摄像头检查结果生成状态报告',
-    schema: z.object({
-      checkResults: z.array(z.object({
-        name: z.string(),
-        status: z.string(),
-        result: z.string(),
-      })),
-    }),
-  }
-);
-
-const tools = [getCamerasTool, checkCameraTool, generateReportTool];
+const tools = [getCamerasTool, checkCameraTool];
 
 // 创建LLM
 const llm = new ChatOpenAI({
@@ -143,6 +110,7 @@ const llmWithTools = llm.bindTools(tools);
 const StateSchema = z.object({
   messages: z.array(z.any()),
   currentState: z.enum(["router", "getlist", "check", "report", "error"]).optional(),
+  nextAction: z.enum(["check", "report"]).optional(),
   retryCount: z.number().default(0),
   cameras: z.array(z.object({
     name: z.string(),
@@ -154,42 +122,68 @@ const StateSchema = z.object({
     result: z.string(),
   })).default([]),
   isValidFlow: z.boolean().default(false),  // 标记是否是有效流程
+  userInput: z.string().optional(),  // 保存用户原始输入
 });
 
 // router: 解析用户意图，决定下一步
 async function routerNode(state) {
-  console.log(`${GREEN}[📍 router] 分析用户意图...${RESET}`);
-
   const messages = state.messages;
-  const lastMsg = messages[messages.length - 1];
-
   const response = await llmWithTools.invoke(messages);
 
   const hasGetCameras = response.tool_calls?.some(t => t.name === 'get_cameras');
   const hasCheckCamera = response.tool_calls?.some(t => t.name === 'check_camera');
 
-  let nextState = END;
-  if (hasGetCameras) {
-    nextState = "getlist";
-  } else if (hasCheckCamera) {
-    nextState = "check";
-  } else {
-    // 用户输入与工具无关，只提醒可用工具
-    const toolList = `无效输入请重试，可用功能：\r\n查询摄像头状态：试试问我门口摄像头在线吗？\r\n`;
+  console.log(`${GREEN}[📍 router] LLM返回: ${response.content?.slice(0, 80) || 'tool_calls: ' + (response.tool_calls?.length || 0)}${RESET}`);
 
+  if (hasGetCameras && hasCheckCamera) {
+    console.log(`${GREEN}[📍 router] -> getlist -> check${RESET}`);
     return {
-      messages: [new HumanMessage(toolList)],
-      currentState: END,
+      messages: [response],
+      currentState: "getlist",
+      nextAction: "check",
       retryCount: 0,
-      isValidFlow: false,
+      isValidFlow: true,
+      userInput: state.userInput,
+    };
+  } else if (hasGetCameras) {
+    console.log(`${GREEN}[📍 router] -> getlist -> report${RESET}`);
+    return {
+      messages: [response],
+      currentState: "getlist",
+      nextAction: "report",
+      retryCount: 0,
+      isValidFlow: true,
+      userInput: state.userInput,
+    };
+  } else if (hasCheckCamera) {
+    console.log(`${GREEN}[📍 router] -> check${RESET}`);
+    return {
+      messages: [response],
+      currentState: "check",
+      retryCount: 0,
+      isValidFlow: true,
+      userInput: state.userInput,
     };
   }
 
+  if (response.content) {
+    console.log(`${GREEN}[📍 router] -> END (LLM直接回复)${RESET}`);
+    return {
+      messages: [response],
+      currentState: END,
+      retryCount: 0,
+      isValidFlow: true,
+      userInput: state.userInput,
+    };
+  }
+
+  console.log(`${GREEN}[📍 router] -> END (需要工具调用)${RESET}`);
   return {
-    messages: [response],
-    currentState: nextState,
+    messages: [new HumanMessage("请明确您的需求，例如：\n- 查看所有摄像头列表\n- 检查所有摄像头状态")],
+    currentState: END,
     retryCount: 0,
-    isValidFlow: true,
+    isValidFlow: false,
+    userInput: state.userInput,
   };
 }
 
@@ -204,7 +198,7 @@ async function getlistNode(state) {
   if (toolCall) {
     try {
       const result = await getCamerasTool.invoke(toolCall.args);
-      console.log(`${GREEN}[✅ getlist] 获取成功${RESET}`);
+      console.log(`${GREEN}[✅ getlist] 获取成功: ${result}${RESET}`);
 
       const cameraRegex = /摄像头名称: "([^"]+)"\s+RTSP地址: "([^"]+)"/g;
       let match;
@@ -222,9 +216,10 @@ async function getlistNode(state) {
       name: 'get_cameras',
     })],
     cameras,
-    currentState: "check",
+    currentState: state.nextAction || "report",
     retryCount: 0,
     isValidFlow: true,
+    userInput: state.userInput,
   };
 }
 
@@ -232,29 +227,64 @@ async function getlistNode(state) {
 async function checkNode(state) {
   console.log(`${GREEN}[🔍 check] 检查摄像头状态...${RESET}`);
 
-  let cameras = state.cameras;
+  const messages = state.messages;
+  const lastMsg = messages[messages.length - 1];
 
-  if (!cameras || cameras.length === 0) {
-    console.log(`${GREEN}[🔍 check] 没有摄像头，转到getlist${RESET}`);
+  // 从tool_call中获取check_camera调用
+  const toolCalls = lastMsg.tool_calls?.filter(t => t.name === 'check_camera') || [];
+
+  if (toolCalls.length === 0) {
+    // 没有明确指定摄像头，检查所有摄像头
+    console.log(`${GREEN}[🔍 check] 未指定摄像头，检查所有${RESET}`);
+    const cameras = state.cameras || [];
+
+    if (cameras.length === 0) {
+      return {
+        messages: [new ToolMessage({ content: "[]", name: 'check_results' })],
+        checkResults: [],
+        currentState: "getlist",
+        retryCount: state.retryCount || 0,
+        isValidFlow: true,
+        userInput: state.userInput,
+      };
+    }
+
+    const checkResults = [];
+    for (const camera of cameras) {
+      try {
+        console.log(`${GREEN}[🔧 检查] ${camera.name}${RESET}`);
+        const result = await checkCameraTool.invoke({ url: camera.url, name: camera.name });
+        checkResults.push({ name: camera.name, status: 'success', result });
+      } catch (e) {
+        checkResults.push({ name: camera.name, status: 'error', result: e.message });
+      }
+    }
+
+    console.log(`${GREEN}[✅ check] 完成，共${checkResults.length}个${RESET}`);
+
     return {
-      messages: [new ToolMessage({ content: "[]", name: 'check_camera' })],
-      cameras: [],
-      checkResults: [],
-      currentState: "getlist",
+      messages: [new ToolMessage({ content: JSON.stringify(checkResults), name: 'check_results' })],
+      checkResults,
+      currentState: "report",
       retryCount: 0,
       isValidFlow: true,
+      userInput: state.userInput,
     };
   }
 
   const checkResults = [];
 
-  for (const camera of cameras) {
+  // 执行所有检查任务
+  for (const toolCall of toolCalls) {
+    const { url, name } = toolCall.args || {};
+    if (!url || !name) continue;
+
     try {
-      console.log(`${GREEN}[🔧 检查] ${camera.name}${RESET}`);
-      const result = await checkCameraTool.invoke({ url: camera.url, name: camera.name });
-      checkResults.push({ name: camera.name, status: 'success', result });
+      console.log(`${GREEN}[🔧 检查] ${name}${RESET}`);
+      const result = await checkCameraTool.invoke({ url, name });
+      checkResults.push({ name, status: 'success', result });
     } catch (e) {
-      checkResults.push({ name: camera.name, status: 'error', result: e.message });
+      checkResults.push({ name, status: 'error', result: e.message });
     }
   }
 
@@ -266,32 +296,57 @@ async function checkNode(state) {
     currentState: "report",
     retryCount: 0,
     isValidFlow: true,
+    userInput: state.userInput,
   };
 }
 
-// report: 生成报告
+// report: 让LLM决定是回复还是继续调用工具
 async function reportNode(state) {
-  console.log(`${GREEN}[📊 report] 生成报告...${RESET}`);
+  console.log(`${GREEN}[📊 report] 生成回复中...${RESET}`);
 
-  const checkResults = state.checkResults;
   const messages = state.messages;
+  const userInput = state.userInput || "";
 
-  // 让LLM根据检查结果生成报告
-  const prompt = `根据以下摄像头检查结果生成状态报告：
+  // 获取工具结果
+  const toolResultMsg = messages.find(m => m.name === 'get_cameras' || m.name === 'check_results');
+  const toolResult = toolResultMsg?.content || "";
 
-检查结果：
-${checkResults.map(r => `- ${r.name}: ${r.status} - ${r.result}`).join('\n')}
+  // 发送给LLM决定下一步
+  const prompt = `用户原始请求: ${userInput}
 
-请生成一份简洁的中文状态报告，用表格输出，只要结果。`;
+工具返回结果:
+${toolResult}
 
-  const response = await llm.invoke([new HumanMessage(prompt)]);
+请根据用户请求和工具结果，决定：
+1. 如果用户需求已满足，直接生成简洁的中文回复
+2. 如果需要调用工具才能完成需求，请调用合适的工具`;
 
+  const response = await llmWithTools.invoke([new HumanMessage(prompt)]);
+
+  // 检查是否需要继续调用工具
+  const hasGetCameras = response.tool_calls?.some(t => t.name === 'get_cameras');
+  const hasCheckCamera = response.tool_calls?.some(t => t.name === 'check_camera');
+
+  if (hasGetCameras || hasCheckCamera) {
+    console.log(`${GREEN}[📊 report] -> 继续调用工具${RESET}`);
+    return {
+      messages: [response],
+      currentState: response.tool_calls[0].name === 'get_cameras' ? "getlist" : "check",
+      retryCount: 0,
+      isValidFlow: true,
+      userInput: state.userInput,
+    };
+  }
+
+  // 直接回复
+  console.log(`${GREEN}[📊 report] -> 结束${RESET}`);
   return {
     messages: [response],
     currentState: END,
     cameras: [],
     checkResults: [],
     isValidFlow: true,
+    userInput: state.userInput,
   };
 }
 
@@ -334,10 +389,10 @@ const workflow = new StateGraph(StateSchema)
     [END]: END,
   })
 
-  .addConditionalEdges("getlist", (state) => state.currentState || "check", {
+  .addConditionalEdges("getlist", (state) => state.currentState || "report", {
     check: "check",
-    error: "error",
-    [END]: "check",
+    report: "report",
+    [END]: END,
   })
 
   .addConditionalEdges("check", (state) => state.currentState || "report", {
@@ -347,7 +402,14 @@ const workflow = new StateGraph(StateSchema)
     [END]: "report",
   })
 
-  .addEdge("report", END)
+  .addConditionalEdges("report", (state) => state.currentState || END, {
+    getlist: "getlist",
+    check: "check",
+    report: "report",
+    error: "error",
+    [END]: END,
+  })
+
   .addEdge("error", END);
 
 // 编译图
@@ -374,6 +436,7 @@ async function main() {
         retryCount: 0,
         cameras: [],
         checkResults: [],
+        userInput,
       };
 
       const result = await graph.invoke(initialState);
@@ -395,9 +458,9 @@ async function main() {
       }
 
       // 根据流程状态决定是否保存到memory
-      if (result.isValidFlow && lastMsg?.content) {
-        await addMemory(`用户: ${userInput}\n助手: ${lastMsg.content}`);
-      }
+      // if (result.isValidFlow && lastMsg?.content) {
+      //   await addMemory(`用户: ${userInput}\n助手: ${lastMsg.content}`);
+      // }
       console.log('\n✅ 任务完成\n');
     } catch (error) {
       console.error('❌ 执行出错:', error.message);
