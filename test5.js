@@ -17,9 +17,9 @@ const MODEL = 'stepfun/step-3.5-flash:free';  //openrouter ok
 // const MODEL = 'z-ai/glm-4.5-air:free';  //openrouter free，ok
 // const MODEL = 'anthropic/claude-3-5-sonnet';  //支持 tool call
 
-// const BASE_URL = "http://172.21.240.16:8000/v1";
+const BASE_URL = "http://172.21.240.16:8000/v1";
 // const BASE_URL = "https://api.qnaigc.com/v1"
-const BASE_URL = "https://openrouter.ai/api/v1"
+// const BASE_URL = "https://openrouter.ai/api/v1"
 
 // API Key
 // const API_KEY = process.env.OPENAI_API_KEY;
@@ -128,18 +128,19 @@ const StateSchema = z.object({
 
 // router: 解析用户意图，决定下一步
 async function routerNode(state) {
-  const messages = state.messages;
-  const response = await llmWithTools.invoke(messages);
+  console.log(`${GREEN}[📍 router] messages(${state.messages.length})${RESET}`);
+
+  const response = await llmWithTools.invoke(state.messages);
 
   const hasGetCameras = response.tool_calls?.some(t => t.name === 'get_cameras');
   const hasCheckCamera = response.tool_calls?.some(t => t.name === 'check_camera');
 
-  console.log(`${GREEN}[📍 router] LLM返回: ${response.content?.slice(0, 80) || 'tool_calls: ' + (response.tool_calls?.length || 0)}${RESET}`);
+  console.log(`${GREEN}[📍 router] LLM返回: tc=${response.tool_calls?.length || 0}${RESET}`);
 
   if (hasGetCameras && hasCheckCamera) {
     console.log(`${GREEN}[📍 router] -> getlist -> check${RESET}`);
     return {
-      messages: [response],
+      messages: [...state.messages, response],
       currentState: "getlist",
       nextAction: "check",
       retryCount: 0,
@@ -149,7 +150,7 @@ async function routerNode(state) {
   } else if (hasGetCameras) {
     console.log(`${GREEN}[📍 router] -> getlist -> report${RESET}`);
     return {
-      messages: [response],
+      messages: [...state.messages, response],
       currentState: "getlist",
       nextAction: "report",
       retryCount: 0,
@@ -159,7 +160,7 @@ async function routerNode(state) {
   } else if (hasCheckCamera) {
     console.log(`${GREEN}[📍 router] -> check${RESET}`);
     return {
-      messages: [response],
+      messages: [...state.messages, response],
       currentState: "check",
       retryCount: 0,
       isValidFlow: true,
@@ -170,7 +171,7 @@ async function routerNode(state) {
   if (response.content) {
     console.log(`${GREEN}[📍 router] -> END (LLM直接回复)${RESET}`);
     return {
-      messages: [response],
+      messages: [...state.messages, response],
       currentState: END,
       retryCount: 0,
       isValidFlow: true,
@@ -180,7 +181,7 @@ async function routerNode(state) {
 
   console.log(`${GREEN}[📍 router] -> END (需要工具调用)${RESET}`);
   return {
-    messages: [new HumanMessage("请明确您的需求，例如：\n- 查看所有摄像头列表\n- 检查所有摄像头状态")],
+    messages: [...state.messages, new HumanMessage("请明确您的需求，例如：\n- 查看所有摄像头列表\n- 检查所有摄像头状态")],
     currentState: END,
     retryCount: 0,
     isValidFlow: false,
@@ -191,6 +192,7 @@ async function routerNode(state) {
 // getlist: 获取摄像头列表
 async function getlistNode(state) {
   console.log(`${GREEN}[📋 getlist] 获取摄像头列表...${RESET}`);
+  console.log(`${GREEN}[📋 getlist] messages(${state.messages.length})${RESET}`);
 
   const lastMsg = state.messages[state.messages.length - 1];
   const toolCall = lastMsg.tool_calls?.find(t => t.name === 'get_cameras');
@@ -199,7 +201,7 @@ async function getlistNode(state) {
   if (toolCall) {
     try {
       const result = await getCamerasTool.invoke(toolCall.args);
-      console.log(`${GREEN}[✅ getlist] 获取成功: ${result}${RESET}`);
+      console.log(`${GREEN}[✅ getlist] 获取成功${RESET}`);
 
       const cameraRegex = /摄像头名称: "([^"]+)"\s+RTSP地址: "([^"]+)"/g;
       let match;
@@ -211,11 +213,14 @@ async function getlistNode(state) {
     }
   }
 
+  const toolMessage = new ToolMessage({
+    content: JSON.stringify(cameras),
+    name: 'get_cameras',
+    tool_call_id: toolCall?.id || '',
+  });
+
   return {
-    messages: [new ToolMessage({
-      content: JSON.stringify(cameras),
-      name: 'get_cameras',
-    })],
+    messages: [...state.messages, toolMessage],
     cameras,
     currentState: state.nextAction || "report",
     retryCount: 0,
@@ -231,6 +236,17 @@ async function checkNode(state) {
   const messages = state.messages;
   const lastMsg = messages[messages.length - 1];
   const cameras = state.cameras || [];
+
+  // 调试：打印所有消息
+  console.log(`${GREEN}[🔍 check] messages(${messages.length}):${RESET}`);
+  messages.forEach((m, i) => {
+    const type = m._getType?.() || m.type || m.constructor.name;
+    const tc = m.tool_calls?.length ? ` tc=${m.tool_calls.length}` : '';
+    const tcId = m.tool_call_id ? ` id=${m.tool_call_id}` : '';
+    const name = m.name ? ` name=${m.name}` : '';
+    const content = m.content?.slice(0, 200) || '';
+    console.log(`${DIM}  [${i}] ${type}${tc}${tcId}${name}: ${content}${RESET}`);
+  });
 
   // 从tool_call中获取check_camera调用
   const toolCalls = lastMsg.tool_calls?.filter(t => t.name === 'check_camera') || [];
@@ -271,8 +287,18 @@ async function checkNode(state) {
 
   console.log(`${GREEN}[✅ check] 完成，共${checkResults.length}个${RESET}`);
 
+  // 为每个check_camera调用创建对应的ToolMessage
+  const toolMessages = checkResults.map((result, i) => {
+    const toolCall = toolCalls[i];
+    return new ToolMessage({
+      content: `检查${result.name}摄像头状态完成：${result.status === 'success' ? '视频流正常' : '连接失败'}。${result.result}`,
+      name: 'check_camera',
+      tool_call_id: toolCall?.id || `call_${i}`,
+    });
+  });
+
   return {
-    messages: [new ToolMessage({ content: JSON.stringify(checkResults), name: 'check_results' })],
+    messages: [...state.messages, ...toolMessages],
     checkResults,
     currentState: "report",
     retryCount: 0,
@@ -286,27 +312,28 @@ async function reportNode(state) {
   console.log(`${GREEN}[📊 report] 生成回复中...${RESET}`);
 
   const messages = state.messages;
-  const userInput = state.userInput || "";
 
-  // 获取工具结果
-  const toolResultMsg = messages.find(m => m.name === 'get_cameras' || m.name === 'check_results');
-  const toolResult = toolResultMsg?.content || "";
+  // 调试：打印消息
+  console.log(`${GREEN}[📊 report] messages(${messages.length}):${RESET}`);
+  messages.forEach((m, i) => {
+    const type = m._getType?.() || m.type || m.constructor.name;
+    const tc = m.tool_calls?.length ? ` tc=${m.tool_calls.length}` : '';
+    const tcId = m.tool_call_id ? ` id=${m.tool_call_id}` : '';
+    const name = m.name ? ` name=${m.name}` : '';
+    const content = m.content?.slice(0, 200) || '';
+    console.log(`${DIM}  [${i}] ${type}${tc}${tcId}${name}: ${content}${RESET}`);
+  });
 
-  // 发送给LLM决定下一步
-  const prompt = `用户原始请求: ${userInput}
+  // 发送给LLM - 传递完整消息历史
+  const response = await llmWithTools.invoke(messages);
 
-工具返回结果:
-${toolResult}
-
-请根据用户请求和工具结果，决定：
-1. 如果用户需求已满足，直接生成简洁的中文回复
-2. 如果需要调用工具才能完成需求，请调用合适的工具
-
-注意：如果用户请求检查所有摄像头状态，请为每个摄像头都创建一个check_camera调用。`;
-
-  const response = await llmWithTools.invoke([new HumanMessage(prompt)]);
-
-  // console.log("prompt：%s,llm:%s", prompt, JSON.stringify(response.tool_calls));
+  console.log(`${GREEN}[📊 report] LLM响应: tc=${response.tool_calls?.length || 0}${RESET}`);
+  if (response.tool_calls) {
+    console.log(`${DIM}[📊 report] tool_calls详情:${RESET}`);
+    response.tool_calls.forEach((tc, i) => {
+      console.log(`${DIM}  [${i}] id=${tc.id} name=${tc.name} args=${JSON.stringify(tc.args)}${RESET}`);
+    });
+  }
 
   // 检查是否需要继续调用工具
   const hasGetCameras = response.tool_calls?.some(t => t.name === 'get_cameras');
@@ -329,7 +356,7 @@ ${toolResult}
   // 直接回复
   console.log(`${GREEN}[📊 report] -> 结束${RESET}`);
   return {
-    messages: [response],
+    messages: [...messages, response],
     currentState: END,
     cameras: [],
     checkResults: [],
@@ -345,18 +372,20 @@ async function errorNode(state) {
   if (state.retryCount >= 3) {
     console.log(`${RED}[❌ error] 重试达上限${RESET}`);
     return {
-      messages: [new HumanMessage("多次尝试后失败，请重新输入请求。")],
+      messages: [...state.messages, new HumanMessage("多次尝试后失败，请重新输入请求。")],
       currentState: END,
       retryCount: 0,
       isValidFlow: false,
+      userInput: state.userInput,
     };
   }
 
   return {
-    messages: [new HumanMessage("请重试您的请求。")],
+    messages: [...state.messages, new HumanMessage("请重试您的请求。")],
     currentState: "router",
     retryCount: state.retryCount + 1,
     isValidFlow: false,
+    userInput: state.userInput,
   };
 }
 
@@ -466,7 +495,12 @@ async function main() {
       console.log('\n✅ 任务完成\n');
     } catch (error) {
       console.error('❌ 执行出错:', error.message);
-      console.error(error.stack);
+      if (error.response?.body) {
+        console.error('❌ 响应体:', JSON.stringify(error.response.body, null, 2));
+      }
+      if (error.stack) {
+        console.error(error.stack);
+      }
     }
   }
 
