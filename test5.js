@@ -130,7 +130,14 @@ const StateSchema = z.object({
 async function routerNode(state) {
   console.log(`${GREEN}[📍 router] messages(${state.messages.length})${RESET}`);
 
-  const response = await llmWithTools.invoke(state.messages);
+  const systemMsg = new SystemMessage(`你是摄像头助手，只能处理以下相关问题：
+1. 查询摄像头列表 - 调用 get_cameras
+2. 检查摄像头状态 - 调用 check_camera（需要摄像头RTSP地址和名称）
+
+如果用户问题与摄像头无关，直接回复："我是摄像头助手，无法回答此问题。"
+不要编造工具调用。`);
+
+  const response = await llmWithTools.invoke([systemMsg, ...state.messages]);
 
   const hasGetCameras = response.tool_calls?.some(t => t.name === 'get_cameras');
   const hasCheckCamera = response.tool_calls?.some(t => t.name === 'check_camera');
@@ -168,23 +175,13 @@ async function routerNode(state) {
     };
   }
 
-  if (response.content) {
-    console.log(`${GREEN}[📍 router] -> END (LLM直接回复)${RESET}`);
-    return {
-      messages: [...state.messages, response],
-      currentState: END,
-      retryCount: 0,
-      isValidFlow: true,
-      userInput: state.userInput,
-    };
-  }
-
-  console.log(`${GREEN}[📍 router] -> END (需要工具调用)${RESET}`);
+  // 无工具调用，直接结束
+  console.log(`${GREEN}[📍 router] -> END${RESET}`);
   return {
-    messages: [...state.messages, new HumanMessage("请明确您的需求，例如：\n- 查看所有摄像头列表\n- 检查所有摄像头状态")],
+    messages: [...state.messages, response],
     currentState: END,
     retryCount: 0,
-    isValidFlow: false,
+    isValidFlow: true,
     userInput: state.userInput,
   };
 }
@@ -324,16 +321,15 @@ async function reportNode(state) {
     console.log(`${DIM}  [${i}] ${type}${tc}${tcId}${name}: ${content}${RESET}`);
   });
 
-  // 发送给LLM - 传递完整消息历史
-  const response = await llmWithTools.invoke(messages);
+  // 发送给LLM - 传递完整消息历史 + system prompt
+  const systemMsg = new SystemMessage(`根据对话历史，决定下一步：
+1. 如果需要调用工具才能完成用户需求，生成合适的tool_calls
+2. 如果用户需求已满足，直接生成简洁的中文回复
+3. 如果工具没有返回有效结果或没找到相关信息，明确回复"未找到相关信息"，不要编造数据`);
+
+  const response = await llmWithTools.invoke([systemMsg, ...messages]);
 
   console.log(`${GREEN}[📊 report] LLM响应: tc=${response.tool_calls?.length || 0}${RESET}`);
-  if (response.tool_calls) {
-    console.log(`${DIM}[📊 report] tool_calls详情:${RESET}`);
-    response.tool_calls.forEach((tc, i) => {
-      console.log(`${DIM}  [${i}] id=${tc.id} name=${tc.name} args=${JSON.stringify(tc.args)}${RESET}`);
-    });
-  }
 
   // 检查是否需要继续调用工具
   const hasGetCameras = response.tool_calls?.some(t => t.name === 'get_cameras');
@@ -353,7 +349,7 @@ async function reportNode(state) {
     };
   }
 
-  // 直接回复
+  // 直接回复（包含找不到相关信息的情况）
   console.log(`${GREEN}[📊 report] -> 结束${RESET}`);
   return {
     messages: [...messages, response],
@@ -456,7 +452,7 @@ async function main() {
       }
 
       // 构建用户输入（附加记忆）
-      const fullUserInput = context + rawUserInput;
+      const fullUserInput = rawUserInput + context;
 
       const initialState = {
         messages: [
