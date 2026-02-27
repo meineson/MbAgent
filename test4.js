@@ -117,14 +117,17 @@ async function main() {
       const res = await fetch(`${BASE_URL}/models`, {
         headers: { Authorization: `Bearer ${API_KEY}` }
       });
-      const data = await res.json();
-      if (data.data) {
-        const models = data.data.slice(0, 20).map(m => m.id);
-        console.log(MAGENTA + '可用模型:' + RESET, models.join(', '), '\n');
+      const text = await res.text();
+      if (text) {
+        const data = JSON.parse(text);
+        if (data.data) {
+          const models = data.data.slice(0, 20).map(m => m.id);
+          console.log(MAGENTA + '可用模型:' + RESET, models.join(', '), '\n');
+        }
       }
     }
   } catch (e) {
-    console.log('获取模型列表失败:', e.message, '\n');
+    // 静默失败，不影响主功能
   }
 
   while (true) {
