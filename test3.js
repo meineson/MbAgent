@@ -115,22 +115,16 @@ async function main() {
 
       let fullContent = '';
       let toolCallsBuffer = [];
+      let currentToolCallId = null;
 
       try {
         debugLog('[DEBUG] 开始调用 model.stream(), messages 数量:', messages.length);
-        debugLog('[DEBUG] messages:', JSON.stringify(messages.map(m => ({
-          role: m.role || m._getType?.(),
-          content: typeof m.content === 'string' ? m.content.slice(0, 100) : m.content,
-          tool_calls: m.tool_calls?.length || 0,
-          tool_call_id: m.tool_call_id
-        })), null, 2));
         
-        // 使用 LangChain 的 stream 方法
         const stream = await model.stream(messages);
         let chunkCount = 0;
         
-        // 用于收集工具调用片段
-        const toolCallChunks = {};
+        // 使用 Map 存储工具调用片段，key 为 id
+        const toolCallsMap = new Map();
 
         for await (const chunk of stream) {
           chunkCount++;
@@ -164,68 +158,69 @@ async function main() {
             fullContent += content;
           }
           
-          // 收集工具调用片段（关键！流式中是分散的）
+          // 收集工具调用片段
           if (chunk.tool_call_chunks && chunk.tool_call_chunks.length > 0) {
-            debugLog('[DEBUG] tool_call_chunks:', JSON.stringify(chunk.tool_call_chunks, null, 2));
             for (const tcChunk of chunk.tool_call_chunks) {
-              const index = tcChunk.index ?? 0;
-              debugLog(`[DEBUG] tcChunk index=${index}, id=${tcChunk.id}, name=${tcChunk.name}, args=${tcChunk.args?.slice(0, 50)}...`);
-              if (!toolCallChunks[index]) {
-                toolCallChunks[index] = {
-                  id: tcChunk.id || '',
+              const callId = tcChunk.id || `temp_${chunkCount}_${tcChunk.index ?? 0}`;
+              
+              if (!toolCallsMap.has(callId)) {
+                toolCallsMap.set(callId, {
+                  id: callId,
                   name: '',
                   args: ''
-                };
+                });
               }
-              if (tcChunk.name) toolCallChunks[index].name += tcChunk.name;
-              if (tcChunk.args) toolCallChunks[index].args += tcChunk.args;
-              if (tcChunk.id && !toolCallChunks[index].id) {
-                toolCallChunks[index].id = tcChunk.id;
+              
+              const entry = toolCallsMap.get(callId);
+              if (tcChunk.id && tcChunk.id !== callId) {
+                entry.id = tcChunk.id;
+              }
+              if (tcChunk.name) {
+                entry.name += tcChunk.name;
+              }
+              if (tcChunk.args) {
+                entry.args += tcChunk.args;
               }
             }
           }
         }
 
         console.log('\n' + '─'.repeat(50));
-        debugLog('[DEBUG] 流式响应结束，总 chunk 数:', chunkCount);
-        debugLog('[DEBUG] 最终 fullContent 长度:', fullContent.length);
-        debugLog('[DEBUG] 收集到的 toolCallChunks:', Object.keys(toolCallChunks).length);
         
-        // 组装工具调用
-        if (Object.keys(toolCallChunks).length > 0) {
-          debugLog('[DEBUG] 检测到工具调用片段，组装中...');
-          toolCallsBuffer = Object.values(toolCallChunks).map(tc => ({
-            id: tc.id,
-            type: 'function',
-            function: {
-              name: tc.name,
-              arguments: tc.args || '{}'
-            }
-          }));
-        } else {
-          debugLog('[DEBUG] 未检测到工具调用片段');
+        // 转换为数组
+        toolCallsBuffer = Array.from(toolCallsMap.values());
+        
+        if (DEBUG) {
+          console.log('[DEBUG] 收集到的工具调用:', JSON.stringify(toolCallsBuffer, null, 2));
         }
 
-        // 检查是否有工具调用
-        const validToolCalls = toolCallsBuffer.filter(tc => tc.function.name);
-        debugLog('[DEBUG] 有效工具调用数量:', validToolCalls.length);
+        // 过滤有效的工具调用
+        const validToolCalls = toolCallsBuffer.filter(tc => tc.name && tc.name.trim());
+        
+        if (DEBUG) {
+          console.log('[DEBUG] 有效工具调用数量:', validToolCalls.length);
+        }
 
         if (validToolCalls.length > 0) {
-          debugLog('[DEBUG] 进入工具调用分支');
-          
           const aiMsg = new AIMessage({
             content: fullContent || '',
             additional_kwargs: {
-              tool_calls: validToolCalls
+              tool_calls: validToolCalls.map(tc => ({
+                id: tc.id,
+                type: 'function',
+                function: {
+                  name: tc.name,
+                  arguments: tc.args || '{}'
+                }
+              }))
             }
           });
           messages.push(aiMsg);
 
           for (let i = 0; i < validToolCalls.length; i++) {
-            const toolCall = validToolCalls[i];
-            const action = toolCall.function.name;
-            const argsStr = toolCall.function.arguments || '{}';
-            debugLog('[DEBUG] 工具调用 arguments 原始值:', argsStr);
+            const tc = validToolCalls[i];
+            const action = tc.name;
+            const argsStr = tc.args || '{}';
             
             let params;
             try {
@@ -250,13 +245,12 @@ async function main() {
 
             messages.push(new ToolMessage({
               content: toolResult,
-              tool_call_id: toolCall.id,
+              tool_call_id: tc.id,
             }));
           }
 
           console.log('\n🔄 工具执行完成，等待 AI 分析结果...\n');
         } else {
-          debugLog('[DEBUG] 进入普通回复分支，fullContent:', fullContent ? '有内容' : '无内容');
           if (fullContent) {
             console.log('\n✨ AI助手回复:', fullContent);
             messages.push(new AIMessage(fullContent));
