@@ -1,10 +1,14 @@
+import 'dotenv/config';
+import { setGlobalDispatcher, ProxyAgent } from 'undici';
 import { execSync } from 'child_process';
 import readline from 'readline';
 
-const MODEL = "minimax/minimax-m2.1"; 
-const BASE_URL = "http://172.21.240.16:8000"
-// const BASE_URL = "https://api.qnaigc.com"
-// const MODEL = 'deepseek/deepseek-v3.2-251201';
+const proxyUrl = process.env.HTTP_PROXY || process.env.HTTPS_PROXY || 'http://127.0.0.1:10808';
+setGlobalDispatcher(new ProxyAgent(proxyUrl));
+
+const MODEL = process.env.MODEL || 'gpt-3.5-turbo';
+const BASE_URL = (process.env.BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
+const API_KEY = process.env.API_KEY || process.env.OPENAI_API_KEY || '';
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -82,7 +86,7 @@ async function runTool(action, params) {
         {
           stdio: ['ignore', 'pipe', 'pipe'],
           encoding: 'utf8',
-          timeout: 10000, // 10秒超时
+          timeout: 30000, // 30秒超时
           maxBuffer: 1024 * 1024
         }
       );
@@ -166,7 +170,6 @@ async function handleStreamResponse(response) {
   
   console.log('\n' + '─'.repeat(50));
   
-  // 构建返回的消息对象
   const result = {
     content: fullContent || null,
     tool_calls: Object.keys(fullToolCalls).length > 0 
@@ -197,16 +200,16 @@ async function sendMessage() {
       console.log('开始向 AI 服务发送请求...');
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
-        console.log('请求已超过 10 秒，正在中止本次请求...');
+        console.log('请求已超过 30 秒，正在中止本次请求...');
         controller.abort();
-      }, 10000);
+      }, 30000);
 
       let message;
       try {
-        const response = await fetch(`${BASE_URL}/v1/chat/completions`, {
+        const response = await fetch(`${BASE_URL}/chat/completions`, {
           method: 'POST',
           headers: {
-            Authorization: 'Bearer ' + process.env.OPENAI_API_KEY,
+            Authorization: 'Bearer ' + API_KEY,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -221,7 +224,6 @@ async function sendMessage() {
 
         clearTimeout(timeoutId);
         
-        // 处理流式响应
         message = await handleStreamResponse(response);
       } catch (error) {
         clearTimeout(timeoutId);
@@ -232,7 +234,6 @@ async function sendMessage() {
       let aiReply;
 
       if (message.tool_calls) {
-        // 先将助手消息（包含工具调用）推送到历史
         messages.push({
           role: 'assistant',
           content: message.content || '',
@@ -260,12 +261,16 @@ async function sendMessage() {
         console.log('\n🔄 工具执行完成，等待 AI 分析结果...\n');
       }
       else if (message.content) {
-        // 普通文本回复
         aiReply = message.content;
         console.log('\n✨ AI助手回复:', aiReply);
         messages.push({ role: 'assistant', content: aiReply });
 
         console.log("\n✅ agent任务结束，等待下一个指令。\n")
+        done = true;
+        break;
+      }
+      else {
+        console.log('[WARN] AI 返回空响应，结束循环');
         done = true;
         break;
       }

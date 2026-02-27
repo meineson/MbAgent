@@ -1,15 +1,21 @@
+import 'dotenv/config';
+import { setGlobalDispatcher, ProxyAgent } from 'undici';
 import { execSync } from 'child_process';
 import readline from 'readline';
 import { ChatOpenAI } from '@langchain/openai';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
+import { HumanMessage, AIMessage, ToolMessage, SystemMessage } from '@langchain/core/messages';
 
-const MODEL = "minimax/minimax-m2.1"; 
-const BASE_URL = "http://172.21.240.16:8000/v1";
-// const BASE_URL = "https://api.qnaigc.com/v1"
+const proxyUrl = process.env.HTTP_PROXY || process.env.HTTPS_PROXY || 'http://127.0.0.1:10808';
+setGlobalDispatcher(new ProxyAgent(proxyUrl));
+
+const MODEL = process.env.MODEL || 'gpt-3.5-turbo';
+const BASE_URL = process.env.BASE_URL || 'https://api.openai.com/v1';
+const API_KEY = process.env.API_KEY || process.env.OPENAI_API_KEY || '';
 
 // 调试开关：设为 true 显示详细日志，false 只显示正常输出
-const DEBUG = false;
+const DEBUG = true;
 
 // 调试日志函数
 const debugLog = (...args) => {
@@ -84,14 +90,14 @@ async function main() {
   // 初始化 LangChain ChatOpenAI，绑定工具
   const model = new ChatOpenAI({
     modelName: MODEL,
-    apiKey: process.env.OPENAI_API_KEY || 'dummy-key',
+    apiKey: API_KEY,
     configuration: { baseURL: BASE_URL },
     streaming: true,
     temperature: 0,
   }).bindTools(tools);
 
   let messages = [
-    { role: 'system', content: '你是 AI Agent，分析用户意图并决定要调用哪个工具。不要生成代码，不要重复执行。' }
+    new SystemMessage('你是 AI Agent，分析用户意图并决定要调用哪个工具。不要生成代码，不要重复执行。')
   ];
 
   console.log('🤖 LangChain Agent 已启动（流式模式），输入 exit 退出\n');
@@ -100,7 +106,7 @@ async function main() {
     const userInput = await new Promise(resolve => rl.question('用户输入: ', resolve));
     if (userInput.toLowerCase() === 'exit') break;
 
-    messages.push({ role: 'user', content: userInput });
+    messages.push(new HumanMessage(userInput));
 
     let done = false;
     while (!done) {
@@ -112,6 +118,12 @@ async function main() {
 
       try {
         debugLog('[DEBUG] 开始调用 model.stream(), messages 数量:', messages.length);
+        debugLog('[DEBUG] messages:', JSON.stringify(messages.map(m => ({
+          role: m.role || m._getType?.(),
+          content: typeof m.content === 'string' ? m.content.slice(0, 100) : m.content,
+          tool_calls: m.tool_calls?.length || 0,
+          tool_call_id: m.tool_call_id
+        })), null, 2));
         
         // 使用 LangChain 的 stream 方法
         const stream = await model.stream(messages);
@@ -154,8 +166,10 @@ async function main() {
           
           // 收集工具调用片段（关键！流式中是分散的）
           if (chunk.tool_call_chunks && chunk.tool_call_chunks.length > 0) {
+            debugLog('[DEBUG] tool_call_chunks:', JSON.stringify(chunk.tool_call_chunks, null, 2));
             for (const tcChunk of chunk.tool_call_chunks) {
-              const index = tcChunk.index || 0;
+              const index = tcChunk.index ?? 0;
+              debugLog(`[DEBUG] tcChunk index=${index}, id=${tcChunk.id}, name=${tcChunk.name}, args=${tcChunk.args?.slice(0, 50)}...`);
               if (!toolCallChunks[index]) {
                 toolCallChunks[index] = {
                   id: tcChunk.id || '',
@@ -198,26 +212,35 @@ async function main() {
 
         if (validToolCalls.length > 0) {
           debugLog('[DEBUG] 进入工具调用分支');
-          // 推送助手消息（工具调用）
-          messages.push({
-            role: 'assistant',
-            content: fullContent || null,
-            tool_calls: validToolCalls
+          
+          const aiMsg = new AIMessage({
+            content: fullContent || '',
+            additional_kwargs: {
+              tool_calls: validToolCalls
+            }
           });
+          messages.push(aiMsg);
 
-          // 执行工具
           for (let i = 0; i < validToolCalls.length; i++) {
             const toolCall = validToolCalls[i];
             const action = toolCall.function.name;
-            const params = JSON.parse(toolCall.function.arguments || '{}');
+            const argsStr = toolCall.function.arguments || '{}';
+            debugLog('[DEBUG] 工具调用 arguments 原始值:', argsStr);
+            
+            let params;
+            try {
+              params = JSON.parse(argsStr);
+            } catch (parseErr) {
+              console.error('[ERROR] JSON 解析失败:', parseErr.message);
+              console.error('[ERROR] 原始 arguments:', argsStr);
+              params = {};
+            }
 
             console.log(`\n🔧 [${i}] 工具调用：`, action, params);
 
-            // 执行对应的工具
             const toolFunc = toolsMap[action];
             let toolResult;
             if (toolFunc) {
-              // LangChain tool 需要使用 invoke 方法
               toolResult = await toolFunc.invoke(params);
             } else {
               toolResult = "未知工具";
@@ -225,20 +248,18 @@ async function main() {
             
             console.log(`✅ [${i}] 工具返回完成`);
 
-            messages.push({
-              role: "tool",
+            messages.push(new ToolMessage({
+              content: toolResult,
               tool_call_id: toolCall.id,
-              content: toolResult
-            });
+            }));
           }
 
           console.log('\n🔄 工具执行完成，等待 AI 分析结果...\n');
         } else {
-          // 普通回复
           debugLog('[DEBUG] 进入普通回复分支，fullContent:', fullContent ? '有内容' : '无内容');
           if (fullContent) {
             console.log('\n✨ AI助手回复:', fullContent);
-            messages.push({ role: 'assistant', content: fullContent });
+            messages.push(new AIMessage(fullContent));
           } else {
             console.log('[WARNING] AI 没有返回任何内容');
           }

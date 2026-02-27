@@ -1,17 +1,18 @@
+import 'dotenv/config';
+import { setGlobalDispatcher, ProxyAgent } from 'undici';
 import { execSync } from 'child_process';
 import readline from 'readline';
 import OpenAI from 'openai';
 
-const MODEL = "minimax/minimax-m2.1"; 
-const BASE_URL = "http://172.21.240.16:8000/v1";  //qwen 7b
-// const BASE_URL = "http://172.21.240.16:8001/v1";  //deepseek 7b
-// const BASE_URL = "http://172.21.240.16:8002/v1";  //qwen vl 2b
-// const BASE_URL = "https://api.qnaigc.com/v1"
-// const MODEL = 'deepseek/deepseek-v3.2-251201';
+const proxyUrl = process.env.HTTP_PROXY || process.env.HTTPS_PROXY || 'http://127.0.0.1:10808';
+setGlobalDispatcher(new ProxyAgent(proxyUrl));
 
-// 初始化 OpenAI 客户端（使用本地 API）
+const MODEL = process.env.MODEL || 'gpt-3.5-turbo';
+const BASE_URL = process.env.BASE_URL || 'https://api.openai.com/v1';
+const API_KEY = process.env.API_KEY || process.env.OPENAI_API_KEY || '';
+
 const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || 'dummy-key',
+  apiKey: API_KEY,
   baseURL: BASE_URL,
   timeout: 10000,
 });

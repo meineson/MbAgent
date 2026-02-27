@@ -1,3 +1,5 @@
+import 'dotenv/config';
+import { setGlobalDispatcher, ProxyAgent } from 'undici';
 import { createAgent } from "langchain";
 import { ChatOpenAI } from "@langchain/openai";
 import { tool } from "@langchain/core/tools";
@@ -6,29 +8,12 @@ import readline from 'readline';
 import { execSync } from 'child_process';
 import { addMemory, searchMemories } from './memory.js';
 
-//qn
-// const MODEL = 'deepseek/deepseek-v3.2-251201';  //ok
-// const MODEL = "minimax/minimax-m2.1";   //ok
-// const MODEL = "z-ai/glm-4.7";   //ok
+const proxyUrl = process.env.HTTP_PROXY || process.env.HTTPS_PROXY || 'http://127.0.0.1:10808';
+setGlobalDispatcher(new ProxyAgent(proxyUrl));
 
-//openrouter
-const MODEL = 'stepfun/step-3.5-flash:free';  //openrouter ok
-// const MODEL = 'z-ai/glm-4.5-air:free';  //openrouter free，ok
-//google/gemma-3-27b-it:free  qwen/qwen3-4b:free 
-//qwen/qwen3-next-80b-a3b-instruct:free
-//openai/gpt-oss-20b:free
-//stepfun/step-3.5-flash:free
-//meta-llama/llama-3.3-70b-instruct:free
-//qwen/qwen3-coder:free
-// const MODEL = 'qwen/qwen3-max-thinking';  //openrouter qwen3
-
-const BASE_URL = "http://172.21.240.16:8000/v1";
-// const BASE_URL = "https://api.qnaigc.com/v1"
-// const BASE_URL = "https://openrouter.ai/api/v1"
-
-// API Key
-// const API_KEY = process.env.OPENAI_API_KEY;
-const API_KEY = process.env.OPENROUTER_API_KEY;
+const MODEL = process.env.MODEL || 'gpt-3.5-turbo';
+const BASE_URL = process.env.BASE_URL || 'https://api.openai.com/v1';
+const API_KEY = process.env.API_KEY || process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || '';
 
 // 颜色常量
 const RESET = '\x1b[0m';
