@@ -15,7 +15,7 @@ const BASE_URL = process.env.BASE_URL || 'https://api.openai.com/v1';
 const API_KEY = process.env.API_KEY || process.env.OPENAI_API_KEY || '';
 
 // 调试开关：设为 true 显示详细日志，false 只显示正常输出
-const DEBUG = true;
+const DEBUG = false;
 
 // 调试日志函数
 const debugLog = (...args) => {
@@ -161,20 +161,26 @@ async function main() {
           // 收集工具调用片段
           if (chunk.tool_call_chunks && chunk.tool_call_chunks.length > 0) {
             for (const tcChunk of chunk.tool_call_chunks) {
-              const callId = tcChunk.id || `temp_${chunkCount}_${tcChunk.index ?? 0}`;
+              // 使用 index 作为主键，表示第几个工具调用
+              const index = tcChunk.index ?? 0;
               
-              if (!toolCallsMap.has(callId)) {
-                toolCallsMap.set(callId, {
-                  id: callId,
+              if (!toolCallsMap.has(index)) {
+                toolCallsMap.set(index, {
+                  id: '',
                   name: '',
                   args: ''
                 });
               }
               
-              const entry = toolCallsMap.get(callId);
-              if (tcChunk.id && tcChunk.id !== callId) {
+              const entry = toolCallsMap.get(index);
+              
+              // 优先使用 tcChunk.id，如果没有且 entry.id 为空，生成临时 id
+              if (tcChunk.id && !entry.id) {
                 entry.id = tcChunk.id;
+              } else if (!entry.id) {
+                entry.id = `call_${index}`;
               }
+              
               if (tcChunk.name) {
                 entry.name += tcChunk.name;
               }
