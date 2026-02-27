@@ -11,9 +11,9 @@
 | test.js | 原生 fetch | 无依赖，手动 SSE | 学习原理 |
 | test2.js | OpenAI SDK | 代码简洁 | 快速开发 |
 | test3.js | LangChain | 流式工作示例 | 学习流式 |
-| test4.js | LangChain Agent | 自动工具调用 | 生产环境 |
-| test5.js | LangGraph | 状态机，详细日志 | 复杂流程 |
-| test6.js | Skill技能框架 | 8个技能，易扩展 | 多功能场景 |
+| test4.js | LangChain | 自动化框架+长期记忆 | 生产环境 |
+| test5.js | LangChain+LangGraph | 状态机驱动Agent | 复杂流程 |
+| test6.js | LangChain | Skill技能框架，易扩展 | 多功能场景 |
 
 ## 快速开始
 
