@@ -1,0 +1,114 @@
+# ==========================================
+# Skills Configuration
+# 技能配置文件（单源生成多格式）
+# ==========================================
+
+skills:
+  web_search:
+    name: "网络搜索"
+    description: "在网络上搜索信息并返回结果"
+    category: "utility"
+    enabled: true
+    parameters:
+      query:
+        type: "string"
+        description: "搜索关键词"
+        required: true
+      numResults:
+        type: "number"
+        description: "返回结果数量"
+        default: 5
+        min: 1
+        max: 20
+
+  get_weather:
+    name: "天气查询"
+    description: "获取指定城市的实时天气信息"
+    category: "information"
+    enabled: true
+    parameters:
+      city:
+        type: "string"
+        description: "城市名称，如 北京、上海、广州"
+        required: true
+
+  calculate:
+    name: "数学计算"
+    description: "执行数学计算，支持加减乘除等基本运算"
+    category: "utility"
+    enabled: true
+    parameters:
+      expression:
+        type: "string"
+        description: "数学表达式，如 \"2+2*3\" 或 \"Math.sqrt(16)\""
+        required: true
+
+  get_current_time:
+    name: "获取时间"
+    description: "获取当前日期和时间"
+    category: "information"
+    enabled: true
+    parameters:
+      timezone:
+        type: "string"
+        description: "时区，如 Asia/Shanghai, America/New_York"
+        default: "Asia/Shanghai"
+
+  read_file:
+    name: "读取文件"
+    description: "读取指定文件的内容"
+    category: "file_ops"
+    enabled: true
+    parameters:
+      filePath:
+        type: "string"
+        description: "文件路径"
+        required: true
+
+  write_file:
+    name: "写入文件"
+    description: "将内容写入指定文件"
+    category: "file_ops"
+    enabled: true
+    parameters:
+      filePath:
+        type: "string"
+        description: "文件路径"
+        required: true
+      content:
+        type: "string"
+        description: "文件内容"
+        required: true
+
+  get_cameras:
+    name: "获取摄像头列表"
+    description: "获取所有在线的网络摄像头，返回结果包含摄像头的名称、编号和RTSP地址。"
+    category: "camera"
+    enabled: true
+    parameters:
+      range:
+        type: "string"
+        description: "摄像头范围，目前只有 all"
+        required: true
+        default: "all"
+
+  check_camera:
+    name: "检查摄像头状态"
+    description: "用获取到的摄像头的RTSP播放地址来检查摄像头的状态，输出结果是ffprobe程序的输出。"
+    category: "camera"
+    enabled: true
+    parameters:
+      name:
+        type: "string"
+        description: "摄像头的名称"
+        required: true
+      url:
+        type: "string"
+        description: "摄像头的RTSP播放地址"
+        required: true
+
+# 配置元数据
+meta:
+  version: "3.0.0"
+  author: "AI Agent"
+  description: "多功能技能集合（配置驱动）"
