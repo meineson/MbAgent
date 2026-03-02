@@ -55,55 +55,27 @@ node test7.js
 
 注意：测试使用kimi k2.5，太小的模型可能不能正确识别意图和执行复杂技能，可能导致异常结果甚至错误删除文件！
 
+![自动生成的demo](test_logs/demo.png)
+
 ```
 node test7.js
-🚀 多功能 AI Agent v7 (参数校验版)
-可用工具: execute_command, read_skill_segment, get_weather, calculate, get_current_time, read_file, write_file, get_cameras, check_camera, code-review, system-info, web-search, ui-ux-pro-max
+🚀 MbAgent
+可用工具: calculate, check_camera, code-review, execute_command, get_cameras, get_current_time, get_weather, playwright-cli, read_file, system-info, ui-ux-pro-max, write_file
 
-用户输入: 设计一个webrtc视频会议界面保存在当前目录demo文件夹中,使用本地tailwindcss和alpine.js
-[Memory] 加载了 0 条历史记忆
-[Memory] 检索到 0 条相关记忆
 
-[🤖 启动任务...]
+User: 设计并生成一个webrtc界面,使用tailwindcss和alpine新版本实现,完成后浏览器打开生成的html页面测试并给出结果
 
-[🔧 调用: ui-ux-pro-max]
-[✅ 结束]
-预览: [⚠️ 摘要] 该工具仅返回目录。你必须使用 'read_skill_segment' 获取细节。路径前缀: '.agents/skills/ui-ux-pro-max/scripts/'。  ###...
+[🔧 Tool: ui-ux-pro-max]
+Input: "{\"context\":\"设计并创建一个WebRTC视频通话界面，要求：\\n1. 使用Tailwind CSS CDN最新版本\\n2. 使用Alpine.js CDN最新版本\\n3. 功能包括：本地视频预览、远程视频显示、开始/结束通话按钮、静音/取消静音、开启/关闭摄像头\\n4. 现代化UI设计，使用glassmorphism风格\\n5. 响应式布局，支持移动端\\n6. 深色主
+[✅ Done]
 
-[🤖 分析中...]
+[🔧 Tool: execute_command]
+Input: "{\"command\":\"python3 skills/ui-ux-pro-max/scripts/search.py \\\"webrtc video call dark glassmorphism modern\\\" --design-system -p \\\"WebRTC Video Call\\\"\"}"
 
-[🔧 调用: read_skill_segment]
-
-[🔧 调用: read_skill_segment]
-[✅ 结束]
-预览: ### 章节内容: Style Selection (MEDIUM)  - `style-match` - Match style to product type - `consistency` - ...
-
-[🤖 分析中...]
-[✅ 结束]
-预览: ### 章节内容: Step 2: Generate Design System (REQUIRED)  **Always start with `--design-system`** to get ...
-
-[🤖 分析中...]
-
-[🔧 调用: execute_command]
-
-[💻 命令] python3 .agents/skills/ui-ux-pro-max/scripts/search.py "video conferencing meeting collaboration professional" --design-system -p "WebRTC Video Conference"
-[✅ 结束]
-预览: +-----------------------------------------------------------------------------------------+ |  TARGE...
-
-[🤖 分析中...]
-
-[🔧 调用: execute_command]
-
-[💻 命令] mkdir -p demo
-[✅ 结束]
-预览:   [通知] 数据已获取。禁止继续搜索。立即交付物理文件。...
-
-[🤖 分析中...]
-
-[🔧 调用: write_file]
-[✅ 结束]
-预览: 文件已保存: demo/index.html...
+……
 ```
+更多日志：[日志](./test_logs/uiuxSkillDemo.txt)。
+
 
 其它示例：(调用浏览器playwright检索网页)：
 ```

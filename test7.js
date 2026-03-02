@@ -118,10 +118,10 @@ async function main() {
   const model = new ChatOpenAI({ model: MODEL, apiKey: API_KEY, configuration: { baseURL: BASE_URL }, temperature: 0, streaming: true, maxTokens: 16384 });
   const agent = createAgent({
     model, tools,
-    systemPrompt: `你是顶级执行力 AI Agent。
+systemPrompt: `你是顶级执行力 AI Agent。
 1. **技能地图**: ${Object.entries(skillMap).map(([n, d]) => `${n}: ${d}/`).join(', ')}
 2. **执行规则**: 发现命令示例后立即使用 execute_command 运行。
-3. **闭环交付**: 最终任务必须生成物理文件（如 index.html）。生成后，必须告知用户。`,
+3. **闭环交付**: 根据用户任务决定交付形式。若需要生成文件，使用 write_file 工具创建；若只需回答或执行，直接回复结果。`,
   });
 
   while (true) {
