@@ -36,7 +36,7 @@ async function loadImplementation(implementationPath) {
 }
 
 async function loadConfig() {
-  const configPath = join(__dirname, 'skills.config.yaml');
+  const configPath = join(__dirname, 'tool_skills/skills_config.yaml');
   try {
     const yamlContent = await readFile(configPath, 'utf8');
     return yaml.load(yamlContent);

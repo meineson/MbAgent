@@ -4,30 +4,12 @@
 # ==========================================
 
 skills:
-  web_search:
-    name: "网络搜索"
-    description: "在网络上搜索信息并返回结果"
-    category: "utility"
-    enabled: true
-    implementation: "./skills/utility.js#web_search"
-    parameters:
-      query:
-        type: "string"
-        description: "搜索关键词"
-        required: true
-      numResults:
-        type: "number"
-        description: "返回结果数量"
-        default: 5
-        min: 1
-        max: 20
-
   get_weather:
     name: "天气查询"
     description: "获取指定城市的实时天气信息"
     category: "information"
     enabled: true
-    implementation: "./skills/info.js#get_weather"
+    implementation: "./tool_skills/info.js#get_weather"
     parameters:
       city:
         type: "string"
@@ -39,7 +21,7 @@ skills:
     description: "执行数学计算，支持加减乘除等基本运算"
     category: "utility"
     enabled: true
-    implementation: "./skills/utility.js#calculate"
+    implementation: "./tool_skills/utility.js#calculate"
     parameters:
       expression:
         type: "string"
@@ -51,7 +33,7 @@ skills:
     description: "获取当前日期和时间"
     category: "information"
     enabled: true
-    implementation: "./skills/info.js#get_current_time"
+    implementation: "./tool_skills/info.js#get_current_time"
     parameters:
       timezone:
         type: "string"
@@ -63,7 +45,7 @@ skills:
     description: "读取指定文件的内容"
     category: "file_ops"
     enabled: true
-    implementation: "./skills/file.js#read_file"
+    implementation: "./tool_skills/file.js#read_file"
     parameters:
       filePath:
         type: "string"
@@ -75,7 +57,7 @@ skills:
     description: "将内容写入指定文件"
     category: "file_ops"
     enabled: true
-    implementation: "./skills/file.js#write_file"
+    implementation: "./tool_skills/file.js#write_file"
     parameters:
       filePath:
         type: "string"
@@ -91,7 +73,7 @@ skills:
     description: "获取所有在线的网络摄像头，返回结果包含摄像头的名称、编号和RTSP地址。"
     category: "camera"
     enabled: true
-    implementation: "./skills/cameras.js#get_cameras"
+    implementation: "./tool_skills/cameras.js#get_cameras"
     parameters:
       range:
         type: "string"
@@ -104,7 +86,7 @@ skills:
     description: "用获取到的摄像头的RTSP播放地址来检查摄像头的状态，输出结果是ffprobe程序的输出。"
     category: "camera"
     enabled: true
-    implementation: "./skills/cameras.js#check_camera"
+    implementation: "./tool_skills/cameras.js#check_camera"
     parameters:
       name:
         type: "string"
