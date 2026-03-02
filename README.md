@@ -25,9 +25,10 @@
 - **混合型加载**：同时支持本地 `agent_skills/` 和下载的 `.agents/skills/`（兼容https://skills.sh）。
 - **智能知识调度**：
   - **自动摘要**：文档过长时自动生成目录摘要，节省 Context。
-  - **按需读取**：Agent 可通过 `read_skill_segment` 精准读取文档特定章节。
+  - **按需读取**：即渐进式加载，Agent 可通过 `read_skill_segment` 精准读取文档特定章节。
 - **自主脚本执行**：AI 能够识别文档中的 Usage Example 并通过 `execute_command` 自动运行 Shell/Python 脚本。
-- **交互优化**：集成 CLI Spinner 加载动画，提供实时的思考状态反馈。
+
+！甚至已经具备一个mini claude code编程助手的雏形（浏览网页，创建目录，生成并写入代码，执行npm安装指令，运行检查命令……）。
 
 ## 快速开始...
 
@@ -37,81 +38,134 @@ export OPENAI_API_KEY="your-api-key"
 export MODEL="gpt-4-turbo"
 export BASE_URL="https://api.openai.com/v1"
 
+node testX.js
+
 # 安装外部技能 (自动下载到 .agents/skills/)
 npx skills add https://github.com/nextlevelbuilder/ui-ux-pro-max-skill --skill ui-ux-pro-max
-
 node test7.js
 ```
 
-**示例：（调用skills.sh上的ui-ux-pro-max技能设计一个软电话界面）**
-```
-🚀 多功能 AI Agent v7 (稳定交付版)
-可用工具: execute_command, read_skill_segment, get_weather, calculate, get_current_time, read_file, write_file, get_cameras, check_camera, code_review, system_info, web_search, ui_ux_pro_max
+**示例1：（调用skills.sh上的ui-ux-pro-max技能设计一个web界面）**
+- 识别意图是“设计”软件界面
+- 调用ui-ux-pro-max技能
+- 调用execute_command技能执行ui-ux-pro-max技能的script脚本search.py查找设计要素
+- 执行ui-ux-pro-max技能的script脚本design_system.py输出设计规范
+- 调用write_file技能保存输出的html或js等web内容
+- 根据需要调用execute_command创建目录、列出目标目录下文件来检查结果
 
-用户输入: 设计一个软电话界面,基于tailwindcss和alpinejs
+注意：测试使用kimi k2.5，太小的模型可能不能正确识别意图和执行复杂技能，可能导致异常结果甚至错误删除文件！
+
+```
+node test7.js
+🚀 多功能 AI Agent v7 (参数校验版)
+可用工具: execute_command, read_skill_segment, get_weather, calculate, get_current_time, read_file, write_file, get_cameras, check_camera, code-review, system-info, web-search, ui-ux-pro-max
+
+用户输入: 设计一个webrtc视频会议界面保存在当前目录demo文件夹中,使用本地tailwindcss和alpine.js
 [Memory] 加载了 0 条历史记忆
 [Memory] 检索到 0 条相关记忆
 
-[🤖 AI 启动中...]
+[🤖 启动任务...]
 
-[🔧 工具调用: ui_ux_pro_max]
-参数: "{\"context\":\"设计一个软电话(Soft Phone)界面，基于Tailwind CSS和Alpine.js。需要包含以下功能：\\n1. 拨号键盘(0-9, *, #)\\n2. 号码输入显示区\\n3. 通话控制按钮(拨打、挂断、静音、免提、保持)\\n4. 通话状态显示(通话中、振铃、空闲等)\\n5. 联系人列表侧边栏\\n6. 通话记录\\n7. 响应式设计，适配桌面和移动端\\n8. 现代简洁的UI风格，使用玻璃拟态或扁平化设计\\n9. 深色/浅色模式支持\\n\\n请提供完整的HTML代码，包含所有必要的CSS样式和JavaScript交互逻辑。\"}"
-[✅ 调用结束]
-
-[🤖 分析中...]
-
-[🔧 工具调用: read_skill_segment]
-参数: "{\"skill_name\":\"ui_ux_pro_max\",\"heading\":\"Style Selection (MEDIUM)\"}"
-
-[🔧 工具调用: read_skill_segment]
-参数: "{\"skill_name\":\"ui_ux_pro_max\",\"heading\":\"Color palette\"}"
-[✅ 调用结束]
-
-[🤖 分析中...]
-[✅ 调用结束]
+[🔧 调用: ui-ux-pro-max]
+[✅ 结束]
+预览: [⚠️ 摘要] 该工具仅返回目录。你必须使用 'read_skill_segment' 获取细节。路径前缀: '.agents/skills/ui-ux-pro-max/scripts/'。  ###...
 
 [🤖 分析中...]
 
-[🔧 工具调用: read_skill_segment]
-参数: "{\"skill_name\":\"ui_ux_pro_max\",\"heading\":\"Style Selection (MEDIUM)\"}"
+[🔧 调用: read_skill_segment]
 
-[🔧 工具调用: read_skill_segment]
-参数: "{\"skill_name\":\"ui_ux_pro_max\",\"heading\":\"Color palette\"}"
-[✅ 调用结束]
-
-[🤖 分析中...]
-[✅ 调用结束]
+[🔧 调用: read_skill_segment]
+[✅ 结束]
+预览: ### 章节内容: Style Selection (MEDIUM)  - `style-match` - Match style to product type - `consistency` - ...
 
 [🤖 分析中...]
-
-[🔧 工具调用: read_skill_segment]
-参数: "{\"skill_name\":\"ui_ux_pro_max\",\"heading\":\"Step 2: Generate Design System (REQUIRED)\"}"
-
-[🔧 工具调用: read_skill_segment]
-参数: "{\"skill_name\":\"ui_ux_pro_max\",\"heading\":\"Stack Guidelines\"}"
-[✅ 调用结束]
-
-[🤖 分析中...]
-[✅ 调用结束]
+[✅ 结束]
+预览: ### 章节内容: Step 2: Generate Design System (REQUIRED)  **Always start with `--design-system`** to get ...
 
 [🤖 分析中...]
 
-[🔧 工具调用: read_skill_segment]
-参数: "{\"skill_name\":\"ui_ux_pro_max\",\"heading\":\"Step 2: Generate Design System (REQUIRED)\"}"
+[🔧 调用: execute_command]
 
-[🔧 工具调用: read_skill_segment]
-参数: "{\"skill_name\":\"ui_ux_pro_max\",\"heading\":\"Common Rules for Professional UI\"}"
-[✅ 调用结束]
-
-[🤖 分析中...]
-[✅ 调用结束]
+[💻 命令] python3 .agents/skills/ui-ux-pro-max/scripts/search.py "video conferencing meeting collaboration professional" --design-system -p "WebRTC Video Conference"
+[✅ 结束]
+预览: +-----------------------------------------------------------------------------------------+ |  TARGE...
 
 [🤖 分析中...]
 
-[🔧 工具调用: write_file]
-参数: "{\"filePath\":\"softphone.html\",\"content\":\"<!DOCTYPE html>\\n<html lang=\\\"zh-CN\\\">\\n<head>\\n    <meta charset=\\\"UTF-8\\\">\\n    <meta name=\\\"viewport\\\" content=\\\"width=device-width, initial-scale=1.0\\\">\\n    <title>软电话 - SoftPhone</title>\\n    <!-- TailwindCSS CDN -->\\n    <
-[✅ 调用结束]
+[🔧 调用: execute_command]
 
+[💻 命令] mkdir -p demo
+[✅ 结束]
+预览:   [通知] 数据已获取。禁止继续搜索。立即交付物理文件。...
+
+[🤖 分析中...]
+
+[🔧 调用: write_file]
+[✅ 结束]
+预览: 文件已保存: demo/index.html...
+```
+
+其它示例：(调用浏览器playwright检索网页)：
+```
+安装skills.sh技能：
+npx skills add microsoft/playwright-cli@playwright-cli
+
+安装全局命令行：
+npm install -g @playwright/cli
+
+node test7.js
+User: 百度搜索tailwindcss最新版本号
+[🔧 Tool: execute_command]
+
+[Exec] ls -la .agents/skills/playwright-cli/
+
+[🔧 Tool: read_file]
+
+[🔧 Tool: execute_command]
+
+[Exec] playwright-cli open https://www.baidu.com
+
+[🔧 Tool: execute_command]
+
+[Exec] playwright-cli type "tailwindcss"
+
+[🔧 Tool: execute_command]
+
+[Exec] playwright-cli press Enter
+
+[🔧 Tool: execute_command]
+
+[Exec] playwright-cli snapshot
+
+[🔧 Tool: read_file]
+
+[🔧 Tool: execute_command]
+
+[Exec] playwright-cli goto https://tailwindcss.com
+
+[🔧 Tool: execute_command]
+
+[🔧 Tool: read_file]
+
+[🔧 Tool: execute_command]
+
+[Exec] playwright-cli close
+
+
+✨ Result:
+根据我在百度搜索并访问 Tailwind CSS 官方网站的结果，找到了最新版本信息：
+
+## Tailwind CSS 最新版本
+
+### v4.2
+
+从 Tailwind CSS 官方网站（tailwindcss.com）可以看到当前版本显示为 **v4.2**。
+
+其他搜索结果中也提到了：
+- 百度百科：提到 "2025年1月22日发布v4.0版本进行性能优化与配置重构"
+- GitHub：显示最新版本为 v3.0.24（这是 v3 系列的最新版本）
+
+**总结**：Tailwind CSS 目前最新的稳定版本是 **v4.2**（这是 v4 大版本系列），而 v3 系列的最新版本是 v3.0.24。v4 系列相比 v3 有重大更新，包括性能优化和配置重构。
 ```
 
 **添加新技能（test7.js）：**

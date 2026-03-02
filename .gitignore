@@ -5,3 +5,4 @@ faiss_db/index.json
 .env
 .agents/skills/
 skills-lock.json
+.playwright-cli
