@@ -38,10 +38,18 @@ export OPENAI_API_KEY="your-api-key"
 export MODEL="gpt-4-turbo"
 export BASE_URL="https://api.openai.com/v1"
 
+#测试不同test代码功能
 node testX.js
+
+# 安装外部技能依赖：（浏览器支持）
+npm install -g playwright
+npx playwright install
+npm install -g @playwright/cli
 
 # 安装外部技能 (自动下载到 .agents/skills/)
 npx skills add https://github.com/nextlevelbuilder/ui-ux-pro-max-skill --skill ui-ux-pro-max
+npx skills add microsoft/playwright-cli@playwright-cli
+
 node test7.js
 ```
 
@@ -79,12 +87,6 @@ Input: "{\"command\":\"python3 skills/ui-ux-pro-max/scripts/search.py \\\"webrtc
 
 其它示例：(调用浏览器playwright检索网页)：
 ```
-安装skills.sh技能：
-npx skills add microsoft/playwright-cli@playwright-cli
-
-安装全局命令行：
-npm install -g @playwright/cli
-
 node test7.js
 User: 百度搜索tailwindcss最新版本号
 [🔧 Tool: execute_command]
@@ -140,7 +142,7 @@ User: 百度搜索tailwindcss最新版本号
 **总结**：Tailwind CSS 目前最新的稳定版本是 **v4.2**（这是 v4 大版本系列），而 v3 系列的最新版本是 v3.0.24。v4 系列相比 v3 有重大更新，包括性能优化和配置重构。
 ```
 
-**添加新技能（test7.js）：**
+**添加自定义技能（test7.js支持）：**
 
 1. 创建技能目录：`mkdir -p agent_skills/my-skill/scripts`
 2. 编写实现脚本 `agent_skills/my-skill/scripts/run.js`:
