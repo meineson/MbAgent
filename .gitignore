@@ -3,3 +3,5 @@ package-lock.json
 faiss_db/index.faiss
 faiss_db/index.json
 .env
+.agents/skills/
+skills-lock.json

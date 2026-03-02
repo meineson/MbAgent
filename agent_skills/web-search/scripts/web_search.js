@@ -13,7 +13,9 @@ export async function run({ query, numResults = 5 }) {
   }
 
   try {
-    const safeQuery = query.replace(/"/g, '\\"');
+    const today = new Date().toISOString().split('T')[0];
+    const enhancedQuery = `${query} (current date: ${today})`;
+    const safeQuery = enhancedQuery.replace(/"/g, '\\"');
     const command = `ddgr --json -n ${numResults} "${safeQuery}" 2>/dev/null`;
     
     const output = execSync(command, { 
