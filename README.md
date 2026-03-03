@@ -82,7 +82,7 @@ Input: "{\"command\":\"python3 skills/ui-ux-pro-max/scripts/search.py \\\"webrtc
 ……
 ```
 更多日志：[日志](./test_logs/designWeb.txt)。
-
+生成结果：[webrtc demo](./webrtc.html)
 
 其它示例：(调用浏览器playwright检索网页)：
 ```
