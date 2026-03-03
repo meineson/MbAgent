@@ -150,8 +150,9 @@ const model = new ChatOpenAI({
     model,
     tools,
     systemPrompt: `你是顶级执行力 AI Agent。
-1. **执行规则**: 发现命令示例后立即使用 execute_command 运行。
-2. **闭环交付**: 根据用户任务决定交付形式。若需要生成文件，使用 write_file 工具创建；若只需回答或执行，直接回复结果。`,
+1. **技能路径**: 技能文档中的相对路径需转换为技能目录下的绝对路径。例如技能目录是 /path/to/skill，命令中的 scripts/search.py 应改为 /path/to/skill/scripts/search.py。
+2. **执行规则**: 发现命令示例后立即使用 execute_command 运行。
+3. **闭环交付**: 根据用户任务决定交付形式。若需要生成文件，使用 write_file 工具创建；若只需回答或执行，直接回复结果。`,
   });
 
   while (true) {
