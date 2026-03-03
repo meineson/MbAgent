@@ -1,0 +1,79 @@
+node test7.js
+🚀 MbAgent
+可用工具: calculate, check_camera, execute_command, get_cameras, get_current_time, get_weather, playwright-cli, read_file, system-info, ui-ux-pro-max, write_file
+
+
+User: 最新ai相关新闻
+
+[🔧 工具: playwright-cli]
+输入: "{}"
+[✅ 完成]
+
+[🔧 工具: execute_command]
+输入: "{\"command\":\"playwright-cli open https://www.36kr.com/newsflashes\"}"
+
+[执行] playwright-cli open https://www.36kr.com/newsflashes
+[✅ 完成]
+
+[🔧 工具: execute_command]
+输入: "{\"command\":\"playwright-cli snapshot\"}"
+
+[执行] playwright-cli snapshot
+[✅ 完成]
+
+[🔧 工具: read_file]
+输入: "{\"filePath\":\".playwright-cli/page-2026-03-03T03-04-56-961Z.yml\"}"
+[✅ 完成]
+
+[🔧 工具: execute_command]
+输入: "{\"command\":\"playwright-cli close\"}"
+
+[执行] playwright-cli close
+[✅ 完成]
+
+
+✨ 结果:
+根据我刚刚获取的最新资讯，以下是AI相关的最新新闻：
+
+## 🔥 最新AI相关新闻（2026年3月3日）
+
+### 1. **港股大模型概念股走强**
+- MINIMAX-WP涨超20%
+- 智谱涨超10%
+- 大模型概念股整体表现强势
+
+### 2. **阿里巴巴推出千问AI眼镜**
+- 在世界移动通信大会（MWC 2026）上真机曝光
+- 配备双旗舰芯片双系统
+- 内置64GB存储空间
+- 首次推出"墨镜款"，上线7种多彩镜片配色
+- 3月8日现货发售
+
+### 3. **Anthropic开放Claude记忆功能**
+- 此前仅供付费用户的记忆功能现已向免费用户开放
+- 简化了从ChatGPT等其他AI聊天机器人导入历史记录的操作
+- 功能类似ChatGPT免费版本
+
+### 4. **英伟达重回摩根士丹利首选芯片股**
+- 取代美光科技成为首选
+- 分析师看好超大规模云服务提供商的多年支出增长
+- 对2027年前景持乐观态度
+
+### 5. **AI服务器产业链景气度高**
+- 顺络电子AI服务器相关订单饱满
+- 客户覆盖国内头部服务器厂商和顶级ODM厂商
+
+### 6. **具身智能融资动态**
+- "小雨智造"完成数亿元B轮融资
+- 通用具身智能科技公司
+- 融资用于加大具身大模型投入
+
+### 7. **AI军事应用突破**
+- 美军动用Claude进行空袭
+- 军用版AI或已达Opus 5.5水平
+
+这些新闻显示AI产业持续火热，从硬件（AI眼镜、AI服务器）到软件（Claude、大模型）再到应用（军事、工业）都呈现出强劲的发展势头。
+
+[Memory] 加载了 4 条历史记忆
+[Memory] 保存记忆: "User: 最新ai相关新闻
+Assistant: 根据我刚..."
