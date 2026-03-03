@@ -81,7 +81,7 @@ Input: "{\"command\":\"python3 skills/ui-ux-pro-max/scripts/search.py \\\"webrtc
 
 ……
 ```
-更多日志：[日志](./test_logs/uiuxSkillDemo.txt)。
+更多日志：[日志](./test_logs/designWeb.txt)。
 
 
 其它示例：(调用浏览器playwright检索网页)：
@@ -140,6 +140,8 @@ User: 百度搜索tailwindcss最新版本号
 
 **总结**：Tailwind CSS 目前最新的稳定版本是 **v4.2**（这是 v4 大版本系列），而 v3 系列的最新版本是 v3.0.24。v4 系列相比 v3 有重大更新，包括性能优化和配置重构。
 ```
+更多日志：[日志](./test_logs/getNews.txt)。
+
 
 **添加自定义技能（test7.js支持）：**
 
