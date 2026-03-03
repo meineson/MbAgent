@@ -22,10 +22,9 @@
 
 - **一技能一目录**：每个技能拥有独立子目录（如 `agent_skills/web-search/`），包含 `SKILL.md` 指南和 `scripts/` 实现脚本。
 - **Markdown 专家规程**：通过 MD 定义元数据和 SOP，AI 会先阅读“说明书”再干活。
-- **混合型加载**：同时支持本地 `agent_skills/` 和下载的 `.agents/skills/`（兼容https://skills.sh）。
-- **智能知识调度**：
-  - **自动摘要**：文档过长时自动生成目录摘要，节省 Context。
-  - **按需读取**：即渐进式加载，Agent 可通过 `read_skill_segment` 精准读取文档特定章节。
+- **混合型加载**：同时支持本地 `agent_skills/` 和下载的 `.agents/skills/`（兼容 https://skills.sh ）。
+- **智能知识调度**：  
+  - **按需读取**：即渐进式加载，启动时只加载描述，需要时加载技能；有子目录中附加技能链接时，按需读取。
 - **自主脚本执行**：AI 能够识别文档中的 Usage Example 并通过 `execute_command` 自动运行 Shell/Python 脚本。
 
 ！甚至已经具备一个mini claude code编程助手的雏形（浏览网页，创建目录，生成并写入代码，执行npm安装指令，运行检查命令……）。
