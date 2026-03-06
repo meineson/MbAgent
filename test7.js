@@ -35,6 +35,128 @@ const rl = readline.createInterface({ input: process.stdin, output: process.stdo
 const COMMAND_LIMIT = 20;
 const state = { commands: new Set() };
 
+// 危险命令模式（黑名单）
+const DANGEROUS_PATTERNS = [
+  // 系统破坏
+  /rm\s+-rf\s+\//i,
+  /rm\s+-rf\s+/i,
+  />+\s*\/(etc|sys|dev|proc|boot|root|home)/i,
+  // 权限提升
+  /chmod\s+777/i,
+  /chown\s+root/i,
+  // 用户管理
+  /userdel|usermod|groupdel/i,
+  // 服务停止
+  /systemctl\s+stop/i,
+  /service\s+\w+\s+stop/i,
+  // 网络攻击
+  /iptables\s+-F/i,
+  /killall\s+-9/i,
+  // Fork bomb
+  /:\(\)\{:\|\:&\}\;/,
+  // 数据库删除
+  /drop\s+database/i,
+  /delete\s+from.*\*/i,
+  // 密码修改
+  /passwd\s+\w+/i,
+  // SSH 配置
+  /rm\s+.*\/\.ssh/i,
+  // 清空关键文件
+  /echo\s+.*>\s*\/(etc|var|usr)/i,
+  // 恶意下载和执行
+  /curl.*\|\s*(sh|bash|python)/i,
+  /wget.*\|\s*(sh|bash|python)/i,
+  /curl.*-o.*\.sh/i,
+  // 文件系统操作
+  /mkfs/i,
+  /dd\s+if=\/dev\/zero/i,
+  // 进程管理（允许 kill 但限制）
+  /kill\s+-9\s+-1/i,
+  // 软链接到系统目录
+  /ln\s+.*\s*\/(etc|lib|bin)/i,
+];
+
+// 允许的命令类型（白名单）
+const ALLOWED_COMMANDS = [
+  // Git 操作
+  /^git\s+(add|commit|push|pull|status|log|diff|branch|checkout|merge|clone|remote|reset|rebase|stash|fetch|tag|show|blame|init)/i,
+  // NPM 包管理
+  /^npm\s+(install|uninstall|update|list|run|test|build|publish|audit|cache)/i,
+  // Node.js 运行
+  /^node\s+\.?\/?[\w\-./]+\.js$/i,
+  /^bun\s+\.?\/?[\w\-./]+\.js$/i,
+  // 文件查看
+  /^(cat|less|more|head|tail)\s+[\w\-./]+/i,
+  /^grep\s+[-\w\s"'./]+/i,
+  // 目录操作
+  /^ls\s+[-\w\s./]*/i,
+  /^pwd$/i,
+  /^cd\s+[\w\-./]*/i,
+  /^mkdir\s+[-p]?\s+[\w\-./]+/i,
+  // 文件操作
+  /^cp\s+[-\w\s./]+/i,
+  /^mv\s+[-\w\s./]+/i,
+  /^touch\s+[\w\-./]+/i,
+  /^rm\s+[-\w\s./]+/i, // 允许删除非关键文件
+  // 测试和构建
+  /^(pytest|jest|mocha|vitest|cargo test)/i,
+  /^(npm test|npm run)/i,
+  // 包管理器
+  /^(pip|pip3|poetry|yarn|pnpm|cargo|go mod|composer)\s+/i,
+  // 代码格式化和检查
+  /^(eslint|prettier|ruff|black|isort|flake8)\s+/i,
+  // 进程操作（限制范围）
+  /^kill\s+\d+$/i,
+  /^pkill\s+-f\s+[\w\-]+$/i,
+  // 系统信息（只读）
+  /^(ps|top|htop|df|du|free|uname|hostname|whoami)\s*[-\w\s]*/i,
+  // 网络诊断（只读）
+  /^(ping|curl|wget|nslookup|dig)\s+[-\w\s./]+/i,
+  // 文件权限（仅限当前项目）
+  /^chmod\s+[0-7]{3,4}\s+[\w\-./]+/i,
+  // 查找和替换
+  /^find\s+[\w\-./]+/i,
+  /^sed\s+[-\w\s"'./]+/i,
+];
+
+function validateCommand(cmd) {
+  const trimmedCmd = cmd.trim();
+
+  // 1. 检查危险模式
+  for (const pattern of DANGEROUS_PATTERNS) {
+    if (pattern.test(trimmedCmd)) {
+      return {
+        safe: false,
+        reason: `检测到危险命令: 匹配模式 ${pattern}`,
+        category: 'dangerous'
+      };
+    }
+  }
+
+  // 2. 检查白名单
+  const allowed = ALLOWED_COMMANDS.some(pattern => pattern.test(trimmedCmd));
+  if (!allowed) {
+    return {
+      safe: false,
+      reason: `命令不在白名单中: ${trimmedCmd}`,
+      category: 'not_allowed'
+    };
+  }
+
+  // 3. 检查命令管道和重定向风险
+  if (trimmedCmd.includes('|') || trimmedCmd.includes('>') || trimmedCmd.includes('>>')) {
+    const parts = trimmedCmd.split(/[|>]/).map(s => s.trim());
+    for (const part of parts) {
+      const partCheck = validateCommand(part);
+      if (!partCheck.safe) {
+        return partCheck;
+      }
+    }
+  }
+
+  return { safe: true };
+}
+
 let spinnerInterval = null;
 function startSpinner(text) {
   if (spinnerInterval) return;
@@ -106,9 +228,18 @@ async function main() {
   const execute_command = tool(
     async ({ command }) => {
       const cmd = command.trim();
+
+      // 安全验证
+      const validation = validateCommand(cmd);
+      if (!validation.safe) {
+        console.error(`\n${RED}[🛑 安全拦截]${RESET} ${validation.reason}`);
+        return `[🛑 命令被拦截] ${validation.reason}\n如果此命令是必需的，请联系管理员审核。`;
+      }
+
       if (state.commands.size >= COMMAND_LIMIT) {
         return `[🛑 熔断] 命令上限(${COMMAND_LIMIT})已达到，请立即交付成果。`;
       }
+
       try {
         console.log(`\n${GREEN}[执行]${RESET} ${DIM}${cmd}${RESET}`);
         const out = execSync(cmd, { encoding: 'utf8', timeout: 30000, maxBuffer: 10 * 1024 * 1024 });
@@ -121,7 +252,7 @@ async function main() {
         return `命令执行失败: ${e.message}\n${e.stderr || ''}`;
       }
     },
-    { name: "execute_command", description: "执行 Shell 命令。", schema: z.object({ command: z.string() }) }
+    { name: "execute_command", description: "执行 Shell 命令。仅允许安全命令，包括 Git、NPM、文件操作、测试等。", schema: z.object({ command: z.string() }) }
   );
 
   const skillDirs = ['./agent_skills', './.agents/skills'];
@@ -152,7 +283,16 @@ const model = new ChatOpenAI({
     systemPrompt: `你是顶级执行力 AI Agent。
 1. **技能路径**: 技能文档中的相对路径需转换为技能目录下的绝对路径。例如技能目录是 /path/to/skill，命令中的 scripts/search.py 应改为 /path/to/skill/scripts/search.py。
 2. **执行规则**: 发现命令示例后立即使用 execute_command 运行。
-3. **闭环交付**: 根据用户任务决定交付形式。若需要生成文件，使用 write_file 工具创建；若只需回答或执行，直接回复结果。`,
+3. **闭环交付**: 根据用户任务决定交付形式。若需要生成文件，使用 write_file 工具创建；若只需回答或执行，直接回复结果。
+4. **命令安全**: execute_command 有安全限制，仅允许以下命令：
+   - Git: git add, commit, push, pull, status, log, diff, branch, checkout, merge, clone
+   - 包管理: npm, yarn, pnpm, bun, pip, cargo, composer
+   - 文件操作: ls, cat, cp, mv, rm, touch, mkdir, grep, find, sed
+   - 测试构建: pytest, jest, mocha, cargo test, npm test, npm run, npm build
+   - 代码检查: eslint, prettier, ruff, black, isort, flake8
+   - 系统信息: ps, top, htop, df, du, free, uname, pwd, whoami
+   - 网络诊断: ping, curl, wget
+5. **禁止操作**: 删除系统文件、修改权限配置、停止系统服务、删除数据库等危险操作。`,
   });
 
   while (true) {
