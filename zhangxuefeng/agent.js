@@ -1,12 +1,29 @@
 /**
  * 张雪峰视角 Agent
- * 基于 LangChain 构建的受限对话代理
+ * 支持 Gemini (Google Search grounding) 和 OpenAI 兼容 API
  */
 import { ChatOpenAI } from '@langchain/openai';
+import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
 import { loadSkill } from './skill.js';
 
 let agentCache = null;
+
+/**
+ * 判断是否使用原生 Gemini API（支持 Google Search grounding）
+ */
+function useNativeGemini() {
+  // 如果有 GOOGLE_API_KEY，使用原生 Gemini API
+  return Boolean(process.env.GOOGLE_API_KEY);
+}
+
+/**
+ * 判断是否使用 Gemini 模型（但通过 OpenAI 兼容接口）
+ */
+function isGeminiModel() {
+  const model = process.env.MODEL || '';
+  return model.startsWith('gemini');
+}
 
 /**
  * 创建 Agent 实例
@@ -17,37 +34,66 @@ export async function createAgent() {
   }
   
   const skill = await loadSkill();
+  const model = process.env.MODEL || 'glm-5';
   
-  // 使用环境变量中的模型配置（适配 .env 变量名）
-  const model = process.env.MODEL || process.env.OPENAI_MODEL || 'glm-5';
-  const baseUrl = process.env.BASE_URL || process.env.OPENAI_BASE_URL || undefined;
-  const apiKey = process.env.API_KEY || process.env.OPENAI_API_KEY;
+  let llm;
+  let searchEnabled = false;
   
-  if (!apiKey) {
-    throw new Error('API_KEY or OPENAI_API_KEY not found in environment');
+  if (useNativeGemini() && isGeminiModel()) {
+    // 原生 Gemini API + Google Search grounding
+    console.log('🔧 使用原生 Gemini API + Google Search:', model);
+    
+    const googleApiKey = process.env.GOOGLE_API_KEY;
+    
+    llm = new ChatGoogleGenerativeAI({
+      model: model,
+      apiKey: googleApiKey,
+      temperature: 0.7,
+      // Google Search grounding - 自动搜索并引用来源
+      tools: [
+        {
+          googleSearchRetrieval: {
+            dynamicRetrievalConfig: {
+              mode: 'MODE_DYNAMIC',
+              dynamicThreshold: 0.5, // 触发搜索的阈值
+            }
+          }
+        }
+      ],
+    });
+    
+    searchEnabled = true;
+  } else {
+    // OpenAI 兼容 API (阿里百炼、火山方舟、Gemini OpenAI兼容等)
+    const baseUrl = process.env.BASE_URL || process.env.OPENAI_BASE_URL;
+    const apiKey = process.env.API_KEY || process.env.OPENAI_API_KEY;
+    
+    if (!apiKey) {
+      throw new Error('API_KEY / OPENAI_API_KEY / GOOGLE_API_KEY not found');
+    }
+    
+    console.log('🔧 使用 OpenAI 兼容 API:', baseUrl || '默认', model);
+    
+    llm = new ChatOpenAI({
+      model: model,
+      temperature: 0.7,
+      apiKey: apiKey,
+      configuration: baseUrl ? { baseURL: baseUrl } : undefined,
+    });
+    
+    searchEnabled = false;
   }
-  
-  const llm = new ChatOpenAI({
-    model: model,
-    temperature: 0.7,  // 稍高温度保持张雪峰的表达风格
-    apiKey: apiKey,
-    configuration: baseUrl ? {
-      baseURL: baseUrl,
-    } : undefined,
-  });
   
   agentCache = {
     skill,
     llm,
+    model,
+    searchEnabled,
     
     /**
      * 执行对话
-     * @param {string} userMessage 用户消息
-     * @param {Array} history 对话历史 [{role: 'human'|'ai', content: '...'}]
-     * @returns {Promise<string>} AI 回复
      */
     async chat(userMessage, history = []) {
-      // 构建消息序列
       const messages = [
         new SystemMessage(skill.systemPrompt),
         ...history.map(h => 
@@ -59,7 +105,25 @@ export async function createAgent() {
       ];
       
       const response = await llm.invoke(messages);
-      return response.content;
+      let reply = response.content;
+      
+      // Gemini 搜索来源提取
+      if (this.searchEnabled && response.additional_kwargs) {
+        const grounding = response.additional_kwargs.groundingMetadata;
+        if (grounding?.groundingChunks?.length > 0) {
+          // 有搜索结果被引用
+          const sources = grounding.groundingChunks
+            .map(c => c.web?.title || c.web?.uri)
+            .filter(Boolean)
+            .slice(0, 3);
+          
+          if (sources.length > 0) {
+            reply += `\n\n---\n📊 数据来源：${sources.join('、')}`;
+          }
+        }
+      }
+      
+      return reply;
     },
     
     /**
@@ -69,6 +133,9 @@ export async function createAgent() {
       return {
         name: skill.name,
         description: skill.description,
+        model: this.model,
+        searchEnabled: this.searchEnabled,
+        searchType: this.searchEnabled ? 'Google Search Grounding' : '无',
       };
     },
   };
