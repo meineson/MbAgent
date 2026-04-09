@@ -6,15 +6,15 @@ import { Router } from 'express';
 
 const router = Router();
 
-// 从环境变量获取密码
-const AUTH_PASSWORD = process.env.AUTH_PASSWORD || 'zhangxuefeng2026';
-
 /**
  * POST /api/auth/verify
  * 验证密码
  */
 router.post('/verify', (req, res) => {
   const { password } = req.body;
+  
+  // 动态读取环境变量（避免 import 时读取）
+  const AUTH_PASSWORD = process.env.AUTH_PASSWORD || 'sbxf2026';
   
   if (!password) {
     return res.status(400).json({ error: 'password is required' });
@@ -38,6 +38,7 @@ router.post('/verify', (req, res) => {
  * 检查是否需要认证
  */
 router.get('/status', (req, res) => {
+  const AUTH_PASSWORD = process.env.AUTH_PASSWORD || 'sbxf2026';
   res.json({
     required: Boolean(AUTH_PASSWORD),
     message: AUTH_PASSWORD ? 'Password authentication required' : 'No authentication required',
