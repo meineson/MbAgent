@@ -28,8 +28,10 @@ app.use(express.static(join(__dirname, 'public')));
 // API 路由
 import zhangxuefengRoutes from './zhangxuefeng/routes.js';
 import authRoutes from './zhangxuefeng/auth.js';
+import limitRoutes, { validateInputLength, rateLimit } from './zhangxuefeng/limit.js';
+app.use('/api/limit', limitRoutes);
 app.use('/api/auth', authRoutes);
-app.use('/api', zhangxuefengRoutes);
+app.use('/api', validateInputLength, rateLimit, zhangxuefengRoutes);
 
 // 健康检查
 app.get('/health', (req, res) => {

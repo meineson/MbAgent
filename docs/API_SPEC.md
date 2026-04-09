@@ -8,6 +8,64 @@
 
 ---
 
+## 限流策略
+
+| 限制类型 | 参数 | 说明 |
+|----------|------|------|
+| 输入长度 | `MAX_MESSAGE_LENGTH = 300` | 单条消息最多 300 字 |
+| 请求频率 | `RATE_LIMIT = 5` / 分钟 | 每 IP 每分钟最多 5 次请求 |
+
+响应头：
+- `X-RateLimit-Limit`: 总限额
+- `X-RateLimit-Remaining`: 剩余限额
+- `Retry-After`: 超出限制时返回，需要等待的秒数
+
+错误响应（超出限制）：
+```json
+{
+  "error": "请求过于频繁，请稍后再试",
+  "retryAfter": 45,
+  "limit": 5,
+  "window": "1分钟"
+}
+```
+
+状态码 `429`。
+
+错误响应（输入过长）：
+```json
+{
+  "error": "输入过长，最多300字",
+  "currentLength": 450,
+  "maxLength": 300
+}
+```
+
+状态码 `400`。
+
+---
+
+## 限流接口
+
+### GET /api/limit/status
+
+获取当前限流状态。
+
+**响应**:
+```json
+{
+  "maxLength": 300,
+  "rateLimit": {
+    "limit": 5,
+    "window": "1分钟",
+    "remaining": 3,
+    "currentCount": 2
+  }
+}
+```
+
+---
+
 ## 认证接口
 
 ### POST /api/auth/verify
@@ -75,7 +133,7 @@
 ```
 
 **参数说明**:
-- `message`: 用户消息（必填）
+- `message`: 用户消息（必填，长度 ≤ 300）
 - `history`: 对话历史（可选，用于多轮对话）
 
 **响应**:
@@ -89,7 +147,8 @@
 
 **状态码**:
 - `200`: 成功
-- `400`: 缺少 message
+- `400`: 缺少 message 或输入过长
+- `429`: 请求频率超出限制
 - `500`: 内部错误
 
 ---
@@ -164,3 +223,5 @@
 | `AUTH_PASSWORD` | 访问密码 | `zhangxuefeng2026` |
 | `SKILL_PATH` | 技能路径 | `/Users/mac/.agents/skills/zhangxuefeng-perspective` |
 | `PORT` | 服务端口 | `3000` |
+| `MAX_MESSAGE_LENGTH` | 最大消息长度（可选） | `300` |
+| `RATE_LIMIT_MAX` | 每分钟请求限制（可选） | `5` |
