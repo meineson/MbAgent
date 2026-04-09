@@ -87,17 +87,29 @@
   </nav>
 
   <main class="max-w-4xl mx-auto p-4">
-    <!-- 身份卡片 -->
-    <div id="skill-info" class="bg-white rounded-xl shadow-md p-6 mb-4 hidden">
-      <div class="flex items-start gap-4">
-        <div class="text-4xl">👨‍🏫</div>
-        <div>
-          <h2 class="font-bold text-gray-800" id="skill-name">加载中...</h2>
-          <p class="text-gray-600 mt-1" id="skill-desc"></p>
+    <!-- 身份卡片（可折叠） -->
+    <div id="skill-info" class="bg-white rounded-xl shadow-md mb-4 hidden">
+      <!-- 标题栏（可点击） -->
+      <div class="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 transition" onclick="toggleSkillInfo()">
+        <div class="flex items-center gap-3">
+          <div class="text-2xl">👨‍🏫</div>
+          <div>
+            <h2 class="font-bold text-gray-800" id="skill-name">加载中...</h2>
+            <p class="text-sm text-gray-500">点击查看技能详情</p>
+          </div>
+        </div>
+        <div id="skill-toggle-icon" class="text-gray-400 transition-transform">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+          </svg>
         </div>
       </div>
-      <div class="mt-4 text-sm text-gray-500 bg-gray-50 rounded-lg p-3">
-        <p>⚠️ 角色扮演基于张雪峰生前公开言论，非本人观点。2026年3月24日离世。</p>
+      <!-- 详情区域（默认隐藏） -->
+      <div id="skill-detail" class="hidden border-t px-4 pb-4">
+        <p class="text-gray-600 mt-3 text-sm" id="skill-desc"></p>
+        <div class="mt-3 text-sm text-gray-500 bg-gray-50 rounded-lg p-3">
+          ⚠️ 角色扮演基于张雪峰生前公开言论，非本人观点。2026年3月24日离世。
+        </div>
       </div>
     </div>
 
@@ -154,10 +166,26 @@
 
     let chatHistory = [];
     let isLoading = false;
+    let skillInfoExpanded = false;
 
     document.addEventListener('DOMContentLoaded', async () => {
       await checkAuth();
     });
+
+    // 展开/折叠技能信息
+    function toggleSkillInfo() {
+      skillInfoExpanded = !skillInfoExpanded;
+      const detail = document.getElementById('skill-detail');
+      const icon = document.getElementById('skill-toggle-icon');
+      
+      if (skillInfoExpanded) {
+        detail.classList.remove('hidden');
+        icon.style.transform = 'rotate(180deg)';
+      } else {
+        detail.classList.add('hidden');
+        icon.style.transform = 'rotate(0deg)';
+      }
+    }
 
     async function checkAuth() {
       try {
