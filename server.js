@@ -46,7 +46,7 @@ app.use((err, req, res, next) => {
 
 // 启动服务
 app.listen(PORT, () => {
-  console.log(`🚀 张雪峰视角服务已启动`);
+  console.log(`🚀 赛博雪峰服务已启动`);
   console.log(`   本地访问: http://localhost:${PORT}`);
   console.log(`   API 文档: http://localhost:${PORT}/api/skill/info`);
   console.log(`   模型: ${process.env.OPENAI_MODEL || 'default'}`);
