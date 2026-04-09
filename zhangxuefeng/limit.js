@@ -70,13 +70,19 @@ function checkRateLimit(key) {
 }
 
 /**
- * 输入长度检查中间件
+ * 输入长度检查中间件（仅检查 POST 请求的 body）
  */
 export function validateInputLength(req, res, next) {
-  const { message } = req.body;
+  // 只检查 POST 请求
+  if (req.method !== 'POST') {
+    return next();
+  }
   
+  const { message } = req.body || {};
+  
+  // 某些 POST 接口不需要 message（如 /api/chat/reset）
   if (!message) {
-    return res.status(400).json({ error: 'message is required' });
+    return next();
   }
   
   if (message.length > MAX_MESSAGE_LENGTH) {
