@@ -187,3 +187,5 @@ node -e "import('./skills_v3.js').then(m => console.log(m.default.manifest.skill
 ## License
 
 MIT
+
+![Visitors](https://api.visitorbadge.io/api/visitors?path=https%3A%2F%2Fgithub.com%2Fmeineson%2FMbAgent&label=%E8%AE%BF%E5%AE%A2&countColor=%23263759&labelStyle=none)
